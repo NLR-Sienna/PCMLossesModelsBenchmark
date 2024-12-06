@@ -21,20 +21,18 @@ const PSY = PowerSystems
 const PSB = PowerSystemCaseBuilder
 const PSI = PowerSimulations
 
-#sys = build_system(PSISystems, "c_sys5_pjm")
-PSB.clear_all_serialized_systems() 
+#clear_all_serialized_systems() 
 
 c_sys5_pjm_da = PSB.build_system(PSISystems, "modified_RTS_GMLC_DA_sys"; skip_serialization = true)
-PSY.transform_single_time_series!(c_sys5_pjm_da, Hour(24), Hour(24))
+#PSY.transform_single_time_series!(c_sys5_pjm_da, Hour(24), Hour(24))
+PSY.transform_single_time_series!(c_sys5_pjm_da, Hour(4), Hour(4))
 c_sys5_pjm_rt = PSB.build_system(PSISystems, "modified_RTS_GMLC_RT_sys"; skip_serialization = true)
 #c_sys5_pjm_rt = PSB.build_system(PSISystems, "modified_RTS_GMLC_DA_sys"; skip_serialization = true)
-#for x in get_components(ACBus, c_sys5_pjm_rt)
-#    set_voltage_limits!(x, (min = 0.9, max = 1.1))
-#end
+for x in get_components(ACBus, c_sys5_pjm_rt)
+    set_voltage_limits!(x, (min = 0.95, max = 1.056))
+end
 PSY.transform_single_time_series!(c_sys5_pjm_rt, Hour(1), Hour(1))
 
-#sys_DA = build_system(PSISystems, "modified_RTS_GMLC_DA_sys"; skip_serialization = true)
-#sys_RT = build_system(PSISystems, "modified_RTS_GMLC_RT_sys"; skip_serialization = true)
 #=
 template_uc = template_unit_commitment()
 pop!(template_uc.branches, :TwoTerminalHVDCLine)
@@ -49,14 +47,13 @@ set_device_model!(template_uc, Transformer2W, StaticBranchUnbounded)
 set_device_model!(template_uc, TapTransformer, StaticBranchUnbounded)
 set_device_model!(template_uc, ThermalStandard, ThermalBasicUnitCommitment)
 set_device_model!(template_uc, PowerLoad, StaticPowerLoad)
-#set_device_model!(template_uc, RenewableDispatch, RenewableFullDispatch)
-set_device_model!(template_uc, RenewableNonDispatch, FixedOutput)
+set_device_model!(template_uc, RenewableDispatch, RenewableFullDispatch)
+#set_device_model!(template_uc, RenewableNonDispatch, FixedOutput)
 
 template_ed = deepcopy(template_uc)
 set_device_model!(template_ed, ThermalStandard, ThermalBasicDispatch)
 set_network_model!(template_ed, NetworkModel( ACPPowerModel,use_slacks = true ),)
 
-#milp_optimizer = optimizer_with_attributes(Xpress.Optimizer)
 milp_optimizer=optimizer_with_attributes(Xpress.Optimizer, "MIPRELSTOP" => 0.02)
 nlp_optimizer = optimizer_with_attributes(Ipopt.Optimizer)
 
@@ -69,6 +66,13 @@ for m in mustrun_gen_set
     set_must_run!(g, true)
 end
 =#
+
+for b in PSY.get_components(PSY.RenewableDispatch, c_sys5_pjm_da)
+    set_available!(b,true)    
+end 
+for b in PSY.get_components(PSY.RenewableDispatch, c_sys5_pjm_rt)
+    set_available!(b,true)    
+end 
 
 models = SimulationModels(
     decision_models=[
@@ -109,12 +113,14 @@ sim = Simulation(
     steps=1,
     models=models,
     sequence=sequence,
-    simulation_folder=".",
+    simulation_folder=mktempdir(), #".",
 )
 
 build!(sim; console_level=Logging.Info)
+
 execute!(sim)
 
+# Retriving results
 res_sim_yc = SimulationResults(sim)
 results_uc_yc = get_decision_problem_results(res_sim_yc, "UC")
 results_ed_yc = get_decision_problem_results(res_sim_yc, "ED")
@@ -199,3 +205,53 @@ end
 307,307_CT_1
 =#
 
+# Check optimization model
+uc1=models.decision_models[1].internal.container
+uc2=models.decision_models[2].internal.container
+
+for (k,v) in uc1.constraints
+    println(k)
+end    
+
+keys(uc1.constraints[PSY.InfrastructureSystems.Optimization.ConstraintKey{NetworkFlowConstraint, Line}("")] )
+uc1.constraints[PSY.InfrastructureSystems.Optimization.ConstraintKey{NetworkFlowConstraint, Line}("")]["B18",24]
+
+for (k,v) in uc1.variables
+    println(k)
+end  
+
+for (k,v) in uc2.variables
+    println(k)
+end  
+
+
+v=uc2.variables[PSY.InfrastructureSystems.Optimization.VariableKey{FlowReactivePowerToFromVariable, Line}("")][:,1]  
+
+v=uc2.variables[PSY.InfrastructureSystems.Optimization.VariableKey{FlowReactivePowerToFromVariable, Line}("")]["B3",1]  
+
+for k in JuMP.all_constraints(uc2.JuMPmodel,; include_variable_in_set_constraints = false)
+    #println(k)
+    try
+        if JuMP.normalized_coefficient(k, v)!=0
+            println("coef;",k,";",JuMP.normalized_coefficient(k, v))#, ";is_fixed;",is_fixed(k),";value;",value(k))
+            println()
+        end
+    catch e  end    
+end
+
+open("mod_uc1.txt","w") do io
+    redirect_stdout(io) do
+        println(objective_function(uc1.JuMPmodel))
+        for k in all_constraints(uc1.JuMPmodel,; include_variable_in_set_constraints = true)           
+            println(name(k),",",k) 
+        end    
+    end
+end
+open("mod_uc2.txt","w") do io
+    redirect_stdout(io) do
+        println(objective_function(uc2.JuMPmodel))
+        for k in all_constraints(uc2.JuMPmodel,; include_variable_in_set_constraints = true)           
+            println(name(k),",",k) 
+        end    
+    end
+end

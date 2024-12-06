@@ -126,7 +126,7 @@ sim = Simulation(
     steps=6,
     models=models,
     sequence=sequence,
-    simulation_folder=".",
+    simulation_folder=mktempdir(),
 )
 
 build!(sim; console_level=Logging.Info)
