@@ -30,20 +30,20 @@ system_ed = deepcopy(system)
 # transform_single_time_series!(
 #            system,
 #            Dates.Hour(48),  # horizon: 48 hr ahead 
-#            Dates.Hour(24),   # interval 
+#            Dates.Hour(24),   # interval: 1 day 
 #        );
 
 # for one time step only:
 transform_single_time_series!(
            system,
-           Dates.Hour(1),  # horizon: 48 hr ahead 
-           Dates.Hour(1),   # interval 
+           Dates.Hour(1),  # horizon: 1 hr ahead 
+           Dates.Hour(1),   # interval: 1 hr
        );
 
 transform_single_time_series!(
         system_ed,
         Dates.Hour(1),  # horizon: 1 hr ahead
-        Dates.Hour(1),  # interval 
+        Dates.Hour(1),  # interval: 1 hr 
     );
 
 ptdf = VirtualPTDF(system;
