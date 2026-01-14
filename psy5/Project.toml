@@ -14,3 +14,11 @@ PowerSimulations = "e690365d-45e2-57bb-ac84-44ba829e73c4"
 PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
 TimeSeries = "9e3dc215-6440-5c97-bce1-76c03772f85e"
 Xpress = "9e70acf3-d6c9-5be6-b5bd-4e2c73e3e054"
+
+[compat]
+HydroPowerSimulations = "0.13"
+InfrastructureSystems = "3"
+PowerFlows = "0.13"
+PowerNetworkMatrices = "0.17"
+PowerSimulations = "0.32"
+PowerSystems = "5"
