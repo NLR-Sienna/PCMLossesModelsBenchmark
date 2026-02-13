@@ -141,8 +141,8 @@ function get_total_R_per_arc(sys, bus_no_from, bus_no_to)
         println("No branches found from bus $bus_no_from to bus $bus_no_to")
         return 0.0
     end
-    # Sum resistances of all parallel branches
-    return sum(get_r(branch) for branch in all_branches)
+    # Compute equivalent resistance of all parallel branches
+    return 1.0 / sum(1.0 /get_r(branch) for branch in all_branches)
 end
 
 """
@@ -177,8 +177,8 @@ function get_total_X_per_arc(sys, bus_no_from, bus_no_to)
         println("No branches found from bus $bus_no_from to bus $bus_no_to")
         return 0.0
     end
-    # Sum reactances of all parallel branches
-    return sum(get_x(branch) for branch in all_branches)
+    # Compute equivalent reactance of all parallel branches
+    return 1.0 / sum(1.0 /get_x(branch) for branch in all_branches)
 end
 
 """
