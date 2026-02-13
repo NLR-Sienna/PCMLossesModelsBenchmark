@@ -21,7 +21,8 @@ Reads the ActivePowerBalance expression for AC buses and extracts bus identifier
 from the column names, converting them from strings to integers.
 """
 function get_bus_ax(res)
-    injection = read_expression(res, "ActivePowerBalance__ACBus"; table_format = TableFormat.WIDE)
+    injection =
+        read_expression(res, "ActivePowerBalance__ACBus"; table_format = TableFormat.WIDE)
     bus_numbers_string = names(injection)[2:end]  # Skip first column (timestamp)
     return parse.(Int, bus_numbers_string)
 end
@@ -44,7 +45,8 @@ Net injection = Generation - Demand at each bus.
 Positive values indicate net generation, negative values indicate net load.
 """
 function get_bus_injection(res)
-    injection = read_expression(res, "ActivePowerBalance__ACBus"; table_format = TableFormat.WIDE)
+    injection =
+        read_expression(res, "ActivePowerBalance__ACBus"; table_format = TableFormat.WIDE)
     # Transpose to get (buses × time) format
     return copy(transpose(Matrix{Float64}(injection[!, 2:end])))
 end
@@ -69,30 +71,41 @@ They are computed as 1.0 + delivery_factors, where delivery factors account for
 the marginal transmission losses. The slack bus is excluded from loss calculations.
 """
 function get_bus_loss_factors(res; slack_number = "113")
-    delivery_factors = read_aux_variable(res, "PowerFlowLossFactors__ACBus"; table_format = TableFormat.WIDE)
+    delivery_factors = read_aux_variable(
+        res,
+        "PowerFlowLossFactors__ACBus";
+        table_format = TableFormat.WIDE,
+    )
     bus_numbers_string = names(delivery_factors)[2:end]
-    ix_slack = findfirst(bus_numbers_string.== slack_number)
-    
+    ix_slack = findfirst(bus_numbers_string .== slack_number)
+
     # Convert delivery factors to loss factors: LF = 1 + DF
-    loss_factors =  1.0 .+ Matrix{Float64}(delivery_factors[!, 2:end])
-    
+    loss_factors = 1.0 .+ Matrix{Float64}(delivery_factors[!, 2:end])
+
     # Set slack bus loss factor to zero (reference)
     loss_factors[:, ix_slack] .= 0.0
-    
+
     return copy(transpose(loss_factors))
 end
 
-function get_bus_loss_factors(res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults}; slack_number = "113")
-    delivery_factors = read_realized_aux_variable(res, "PowerFlowLossFactors__ACBus"; table_format = TableFormat.WIDE)
+function get_bus_loss_factors(
+    res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults};
+    slack_number = "113",
+)
+    delivery_factors = read_realized_aux_variable(
+        res,
+        "PowerFlowLossFactors__ACBus";
+        table_format = TableFormat.WIDE,
+    )
     bus_numbers_string = names(delivery_factors)[2:end]
-    ix_slack = findfirst(bus_numbers_string.== slack_number)
-    
+    ix_slack = findfirst(bus_numbers_string .== slack_number)
+
     # Convert delivery factors to loss factors: LF = 1 + DF
-    loss_factors =  1.0 .+ Matrix{Float64}(delivery_factors[!, 2:end])
-    
+    loss_factors = 1.0 .+ Matrix{Float64}(delivery_factors[!, 2:end])
+
     # Set slack bus loss factor to zero (reference)
     loss_factors[:, ix_slack] .= 0.0
-    
+
     return copy(transpose(loss_factors))
 end
 
@@ -117,7 +130,13 @@ Only includes available (in-service) branches.
 """
 function get_total_R_per_arc(sys, bus_no_from, bus_no_to)
     # Find all available branches connecting the two buses
-    all_branches = get_components(x -> get_available(x) && (x.arc.from.number == bus_no_from) && (x.arc.to.number == bus_no_to), ACBranch, sys)
+    all_branches = get_components(
+        x ->
+            get_available(x) && (x.arc.from.number == bus_no_from) &&
+                (x.arc.to.number == bus_no_to),
+        ACBranch,
+        sys,
+    )
     if isempty(all_branches)
         println("No branches found from bus $bus_no_from to bus $bus_no_to")
         return 0.0
@@ -147,7 +166,13 @@ Only includes available (in-service) branches.
 """
 function get_total_X_per_arc(sys, bus_no_from, bus_no_to)
     # Find all available branches connecting the two buses
-    all_branches = get_components(x -> get_available(x) && (x.arc.from.number == bus_no_from) && (x.arc.to.number == bus_no_to), ACBranch, sys)
+    all_branches = get_components(
+        x ->
+            get_available(x) && (x.arc.from.number == bus_no_from) &&
+                (x.arc.to.number == bus_no_to),
+        ACBranch,
+        sys,
+    )
     if isempty(all_branches)
         println("No branches found from bus $bus_no_from to bus $bus_no_to")
         return 0.0
@@ -174,13 +199,23 @@ Voltage magnitudes are computed from AC power flow analysis and are typically
 close to 1.0 p.u. for well-operated systems.
 """
 function get_power_flow_voltage_mag(res)
-    pf_bus = read_aux_variable(res, "PowerFlowVoltageMagnitude__ACBus"; table_format = TableFormat.WIDE)
+    pf_bus = read_aux_variable(
+        res,
+        "PowerFlowVoltageMagnitude__ACBus";
+        table_format = TableFormat.WIDE,
+    )
     # Transpose to get (buses × time) format
     return copy(transpose(Matrix{Float64}(pf_bus[!, 2:end])))
 end
 
-function get_power_flow_voltage_mag(res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults})
-    pf_bus = read_realized_aux_variable(res, "PowerFlowVoltageMagnitude__ACBus"; table_format = TableFormat.WIDE)
+function get_power_flow_voltage_mag(
+    res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults},
+)
+    pf_bus = read_realized_aux_variable(
+        res,
+        "PowerFlowVoltageMagnitude__ACBus";
+        table_format = TableFormat.WIDE,
+    )
     # Transpose to get (buses × time) format
     return copy(transpose(Matrix{Float64}(pf_bus[!, 2:end])))
 end
@@ -209,10 +244,11 @@ function get_power_flow_arc_voltage_mag(res, ptdf)
     arc_axes = axes(ptdf, 2)  # Get (from_bus, to_bus) pairs
     V_bus = get_power_flow_voltage_mag(res)
     V_line = zeros(length(arc_axes), size(V_bus, 2))
-    
+
     # Use maximum voltage of the two buses for each arc
     for (ix, (bus_no_from, bus_no_to)) in enumerate(arc_axes)
-        V_line[ix, :] = max(V_bus[bus_lookup[bus_no_from], :], V_bus[bus_lookup[bus_no_to], :])
+        V_line[ix, :] =
+            max(V_bus[bus_lookup[bus_no_from], :], V_bus[bus_lookup[bus_no_to], :])
     end
     return V_line
 end
@@ -240,7 +276,7 @@ function get_RX_vector(sys, ptdf)
     total_br = length(AA)
     R = zeros(total_br)
     X = zeros(total_br)
-    
+
     # Compute R and X for each arc
     for (ix, (bus_no_from, bus_no_to)) in enumerate(AA)
         R[ix] = get_total_R_per_arc(sys, bus_no_from, bus_no_to)
@@ -289,12 +325,18 @@ function get_AC_dLoss_dP(res, sys)
     loss_p = zeros(bus_length, T_length)
     injection = get_bus_injection(res)
     R, _ = get_RX_vector(sys, ptdf)
-    
+
     # Compute AC loss sensitivity for each bus and time period
     # This accounts for voltage-dependent losses
     for j in 1:bus_length
         for t in 1:T_length
-            loss_p[j, t] = sum(2 * R[k] * V_line[k] / V_bus[j, t] * ptdf[k, j] * (sum(V_line[k, t] / V_bus[i, t] * ptdf[k, i] * injection[i, t] for i in 1:bus_length)) for k in 1:arcs_length)
+            loss_p[j, t] = sum(
+                2 * R[k] * V_line[k] / V_bus[j, t] * ptdf[k, j] *
+                (sum(
+                    V_line[k, t] / V_bus[i, t] * ptdf[k, i] * injection[i, t] for
+                    i in 1:bus_length
+                )) for k in 1:arcs_length
+            )
         end
     end
     return loss_p
@@ -335,14 +377,18 @@ function get_DC_dLoss_dP(res, sys)
     injection = get_bus_injection(res)
     T_length = size(injection, 2)
     loss_p = zeros(bus_length, T_length)
-    
+
     R, _ = get_RX_vector(sys, ptdf)
-    
+
     # Compute DC loss sensitivity for each bus and time period
     # Assumes constant voltage (V = 1.0 p.u.)
     for i in 1:bus_length
         for t in 1:T_length
-            loss_p[i, t] = sum(2 * R[k] * ptdf[k, i] * (sum(ptdf[k, j] * injection[j, t] for j in 1:bus_length)) for k in 1:arcs_length)
+            loss_p[i, t] = sum(
+                2 * R[k] * ptdf[k, i] *
+                (sum(ptdf[k, j] * injection[j, t] for j in 1:bus_length)) for
+                k in 1:arcs_length
+            )
         end
     end
     return loss_p
@@ -371,38 +417,116 @@ This is the "ground truth" loss from detailed AC power flow calculations.
 """
 function get_total_AC_loss(res)
     # Read power flows in both directions for lines
-    FromTo_Line = Matrix{Float64}(read_aux_variable(res, "PowerFlowLineActivePowerFromTo__Line"; table_format = TableFormat.WIDE)[!, 2:end])
-    ToFrom_Line = Matrix{Float64}(read_aux_variable(res, "PowerFlowLineActivePowerToFrom__Line"; table_format = TableFormat.WIDE)[!, 2:end])
-    
+    FromTo_Line = Matrix{Float64}(
+        read_aux_variable(
+            res,
+            "PowerFlowLineActivePowerFromTo__Line";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+    ToFrom_Line = Matrix{Float64}(
+        read_aux_variable(
+            res,
+            "PowerFlowLineActivePowerToFrom__Line";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+
     # Read power flows in both directions for tap transformers
-    FromTo_TapTransformer = Matrix{Float64}(read_aux_variable(res, "PowerFlowLineActivePowerFromTo__TapTransformer"; table_format = TableFormat.WIDE)[!, 2:end])
-    ToFrom_TapTransformer = Matrix{Float64}(read_aux_variable(res, "PowerFlowLineActivePowerToFrom__TapTransformer"; table_format = TableFormat.WIDE)[!, 2:end])
-    
+    FromTo_TapTransformer = Matrix{Float64}(
+        read_aux_variable(
+            res,
+            "PowerFlowLineActivePowerFromTo__TapTransformer";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+    ToFrom_TapTransformer = Matrix{Float64}(
+        read_aux_variable(
+            res,
+            "PowerFlowLineActivePowerToFrom__TapTransformer";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+
     T_length = size(FromTo_Line, 1)
     total_loss = zeros(T_length)
-    
+
     # Sum all branch losses: Loss_k = P_from_to + P_to_from
-    for t = 1:T_length
-        total_loss[t] = sum(FromTo_Line[t, :] + ToFrom_Line[t, :]) + sum(FromTo_TapTransformer[t, :] + ToFrom_TapTransformer[t, :])
+    for t in 1:T_length
+        total_loss[t] =
+            sum(FromTo_Line[t, :] + ToFrom_Line[t, :]) +
+            sum(FromTo_TapTransformer[t, :] + ToFrom_TapTransformer[t, :])
     end
     return total_loss
 end
 
-function get_total_AC_loss(res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults})
+function get_total_AC_loss(
+    res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults},
+)
     # Read power flows in both directions for lines
-    FromTo_Line = Matrix{Float64}(read_realized_aux_variable(res, "PowerFlowLineActivePowerFromTo__Line"; table_format = TableFormat.WIDE)[!, 2:end])
-    ToFrom_Line = Matrix{Float64}(read_realized_aux_variable(res, "PowerFlowLineActivePowerToFrom__Line"; table_format = TableFormat.WIDE)[!, 2:end])
-    
+    FromTo_Line = Matrix{Float64}(
+        read_realized_aux_variable(
+            res,
+            "PowerFlowLineActivePowerFromTo__Line";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+    ToFrom_Line = Matrix{Float64}(
+        read_realized_aux_variable(
+            res,
+            "PowerFlowLineActivePowerToFrom__Line";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+
     # Read power flows in both directions for tap transformers
-    FromTo_TapTransformer = Matrix{Float64}(read_realized_aux_variable(res, "PowerFlowLineActivePowerFromTo__TapTransformer"; table_format = TableFormat.WIDE)[!, 2:end])
-    ToFrom_TapTransformer = Matrix{Float64}(read_realized_aux_variable(res, "PowerFlowLineActivePowerToFrom__TapTransformer"; table_format = TableFormat.WIDE)[!, 2:end])
-    
+    FromTo_TapTransformer = Matrix{Float64}(
+        read_realized_aux_variable(
+            res,
+            "PowerFlowLineActivePowerFromTo__TapTransformer";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+    ToFrom_TapTransformer = Matrix{Float64}(
+        read_realized_aux_variable(
+            res,
+            "PowerFlowLineActivePowerToFrom__TapTransformer";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+
     T_length = size(FromTo_Line, 1)
     total_loss = zeros(T_length)
-    
+
     # Sum all branch losses: Loss_k = P_from_to + P_to_from
-    for t = 1:T_length
-        total_loss[t] = sum(FromTo_Line[t, :] + ToFrom_Line[t, :]) + sum(FromTo_TapTransformer[t, :] + ToFrom_TapTransformer[t, :])
+    for t in 1:T_length
+        total_loss[t] =
+            sum(FromTo_Line[t, :] + ToFrom_Line[t, :]) +
+            sum(FromTo_TapTransformer[t, :] + ToFrom_TapTransformer[t, :])
     end
     return total_loss
 end
@@ -425,16 +549,54 @@ Loss on each line is computed as P_from_to + P_to_from.
 For lossless lines, this sum is zero. For lossy lines, it represents
 the I²R losses dissipated in the series resistance.
 """
-function get_line_loss(res)    
-    FromTo_Line = Matrix{Float64}(read_aux_variable(res, "PowerFlowLineActivePowerFromTo__Line"; table_format = TableFormat.WIDE)[!, 2:end])
-    ToFrom_Line = Matrix{Float64}(read_aux_variable(res, "PowerFlowLineActivePowerToFrom__Line"; table_format = TableFormat.WIDE)[!, 2:end])
+function get_line_loss(res)
+    FromTo_Line = Matrix{Float64}(
+        read_aux_variable(
+            res,
+            "PowerFlowLineActivePowerFromTo__Line";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+    ToFrom_Line = Matrix{Float64}(
+        read_aux_variable(
+            res,
+            "PowerFlowLineActivePowerToFrom__Line";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
     # Transpose to get (lines × time) format
     return copy(transpose(FromTo_Line + ToFrom_Line))
 end
 
-function get_line_loss(res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults})    
-    FromTo_Line = Matrix{Float64}(read_realized_aux_variable(res, "PowerFlowLineActivePowerFromTo__Line"; table_format = TableFormat.WIDE)[!, 2:end])
-    ToFrom_Line = Matrix{Float64}(read_realized_aux_variable(res, "PowerFlowLineActivePowerToFrom__Line"; table_format = TableFormat.WIDE)[!, 2:end])
+function get_line_loss(
+    res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults},
+)
+    FromTo_Line = Matrix{Float64}(
+        read_realized_aux_variable(
+            res,
+            "PowerFlowLineActivePowerFromTo__Line";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+    ToFrom_Line = Matrix{Float64}(
+        read_realized_aux_variable(
+            res,
+            "PowerFlowLineActivePowerToFrom__Line";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
     # Transpose to get (lines × time) format
     return copy(transpose(FromTo_Line + ToFrom_Line))
 end
@@ -457,16 +619,54 @@ Loss on each transformer is computed as P_from_to + P_to_from.
 Transformers have both resistive (I²R) and core losses, though this
 formulation primarily captures the load-dependent resistive losses.
 """
-function get_tap_transformer_loss(res)    
-    FromTo_TapTransformer = Matrix{Float64}(read_aux_variable(res, "PowerFlowLineActivePowerFromTo__TapTransformer"; table_format = TableFormat.WIDE)[!, 2:end])
-    ToFrom_TapTransformer = Matrix{Float64}(read_aux_variable(res, "PowerFlowLineActivePowerToFrom__TapTransformer"; table_format = TableFormat.WIDE)[!, 2:end])
+function get_tap_transformer_loss(res)
+    FromTo_TapTransformer = Matrix{Float64}(
+        read_aux_variable(
+            res,
+            "PowerFlowLineActivePowerFromTo__TapTransformer";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+    ToFrom_TapTransformer = Matrix{Float64}(
+        read_aux_variable(
+            res,
+            "PowerFlowLineActivePowerToFrom__TapTransformer";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
     # Transpose to get (transformers × time) format
     return copy(transpose(FromTo_TapTransformer + ToFrom_TapTransformer))
 end
 
-function get_tap_transformer_loss(res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults})    
-    FromTo_TapTransformer = Matrix{Float64}(read_realized_aux_variable(res, "PowerFlowLineActivePowerFromTo__TapTransformer"; table_format = TableFormat.WIDE)[!, 2:end])
-    ToFrom_TapTransformer = Matrix{Float64}(read_realized_aux_variable(res, "PowerFlowLineActivePowerToFrom__TapTransformer"; table_format = TableFormat.WIDE)[!, 2:end])
+function get_tap_transformer_loss(
+    res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults},
+)
+    FromTo_TapTransformer = Matrix{Float64}(
+        read_realized_aux_variable(
+            res,
+            "PowerFlowLineActivePowerFromTo__TapTransformer";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+    ToFrom_TapTransformer = Matrix{Float64}(
+        read_realized_aux_variable(
+            res,
+            "PowerFlowLineActivePowerToFrom__TapTransformer";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
     # Transpose to get (transformers × time) format
     return copy(transpose(FromTo_TapTransformer + ToFrom_TapTransformer))
 end
@@ -546,24 +746,45 @@ Use cases:
 """
 function get_fictitious_nodal_demand_by_loss(res, sys)
     # Read power flow variables
-    line_var = read_aux_variable(res, "PowerFlowLineActivePowerFromTo__Line"; table_format = TableFormat.WIDE)
-    tap_var = read_aux_variable(res, "PowerFlowLineActivePowerFromTo__TapTransformer"; table_format = TableFormat.WIDE)
+    line_var = read_aux_variable(
+        res,
+        "PowerFlowLineActivePowerFromTo__Line";
+        table_format = TableFormat.WIDE,
+    )
+    tap_var = read_aux_variable(
+        res,
+        "PowerFlowLineActivePowerFromTo__TapTransformer";
+        table_format = TableFormat.WIDE,
+    )
     T_length = size(line_var, 1)
-    
+
     # Extract component names
     line_names = names(line_var[!, 2:end])
     tap_names = names(tap_var[!, 2:end])
-    
+
     # Get bus numbering
-    bus_numbers = parse.(Int, names(read_expression(res, "ActivePowerBalance__ACBus", table_format=TableFormat.WIDE)[!, 2:end]))
-    
+    bus_numbers =
+        parse.(
+            Int,
+            names(
+                read_expression(
+                    res,
+                    "ActivePowerBalance__ACBus";
+                    table_format = TableFormat.WIDE,
+                )[
+                    !,
+                    2:end,
+                ],
+            ),
+        )
+
     # Compute individual branch losses
     line_loss = get_line_loss(res)
     tap_tap_tx_loss = get_tap_transformer_loss(res)
-    
+
     # Initialize fictitious nodal demand matrix
     FND = zeros(length(bus_numbers), T_length)
-    
+
     # Allocate line losses (50% to each endpoint)
     for (ix_line, line_name) in enumerate(line_names)
         line = get_component(Line, sys, line_name)
@@ -572,14 +793,14 @@ function get_fictitious_nodal_demand_by_loss(res, sys)
         end
         bus_ix_from = get_bus_from_index(bus_numbers, line)
         bus_ix_to = get_bus_to_index(bus_numbers, line)
-        
+
         # Split loss equally between both buses
-        for t = 1:T_length
+        for t in 1:T_length
             FND[bus_ix_from, t] += line_loss[ix_line, t] / 2.0
             FND[bus_ix_to, t] += line_loss[ix_line, t] / 2.0
         end
     end
-    
+
     # Allocate transformer losses (50% to each endpoint)
     for (ix_tap, tap_name) in enumerate(tap_names)
         tap = get_component(TapTransformer, sys, tap_name)
@@ -588,37 +809,61 @@ function get_fictitious_nodal_demand_by_loss(res, sys)
         end
         bus_ix_from = get_bus_from_index(bus_numbers, tap)
         bus_ix_to = get_bus_to_index(bus_numbers, tap)
-        
+
         # Split loss equally between both buses
-        for t = 1:T_length
+        for t in 1:T_length
             FND[bus_ix_from, t] += tap_tap_tx_loss[ix_tap, t] / 2.0
             FND[bus_ix_to, t] += tap_tap_tx_loss[ix_tap, t] / 2.0
         end
     end
-    
+
     return FND
 end
 
-function get_fictitious_nodal_demand_by_loss(res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults}, sys)
+function get_fictitious_nodal_demand_by_loss(
+    res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults},
+    sys,
+)
     # Read power flow variables
-    line_var = read_realized_aux_variable(res, "PowerFlowLineActivePowerFromTo__Line"; table_format = TableFormat.WIDE)
-    tap_var = read_realized_aux_variable(res, "PowerFlowLineActivePowerFromTo__TapTransformer"; table_format = TableFormat.WIDE)
+    line_var = read_realized_aux_variable(
+        res,
+        "PowerFlowLineActivePowerFromTo__Line";
+        table_format = TableFormat.WIDE,
+    )
+    tap_var = read_realized_aux_variable(
+        res,
+        "PowerFlowLineActivePowerFromTo__TapTransformer";
+        table_format = TableFormat.WIDE,
+    )
     T_length = size(line_var, 1)
-    
+
     # Extract component names
     line_names = names(line_var[!, 2:end])
     tap_names = names(tap_var[!, 2:end])
-    
+
     # Get bus numbering
-    bus_numbers = parse.(Int, names(read_realized_expression(res, "ActivePowerBalance__ACBus", table_format=TableFormat.WIDE)[!, 2:end]))
-    
+    bus_numbers =
+        parse.(
+            Int,
+            names(
+                read_realized_expression(
+                    res,
+                    "ActivePowerBalance__ACBus";
+                    table_format = TableFormat.WIDE,
+                )[
+                    !,
+                    2:end,
+                ],
+            ),
+        )
+
     # Compute individual branch losses
     line_loss = get_line_loss(res)
     tap_tap_tx_loss = get_tap_transformer_loss(res)
-    
+
     # Initialize fictitious nodal demand matrix
     FND = zeros(length(bus_numbers), T_length)
-    
+
     # Allocate line losses (50% to each endpoint)
     for (ix_line, line_name) in enumerate(line_names)
         line = get_component(Line, sys, line_name)
@@ -627,14 +872,14 @@ function get_fictitious_nodal_demand_by_loss(res::PSI.SimulationProblemResults{P
         end
         bus_ix_from = get_bus_from_index(bus_numbers, line)
         bus_ix_to = get_bus_to_index(bus_numbers, line)
-        
+
         # Split loss equally between both buses
-        for t = 1:T_length
+        for t in 1:T_length
             FND[bus_ix_from, t] += line_loss[ix_line, t] / 2.0
             FND[bus_ix_to, t] += line_loss[ix_line, t] / 2.0
         end
     end
-    
+
     # Allocate transformer losses (50% to each endpoint)
     for (ix_tap, tap_name) in enumerate(tap_names)
         tap = get_component(TapTransformer, sys, tap_name)
@@ -643,14 +888,14 @@ function get_fictitious_nodal_demand_by_loss(res::PSI.SimulationProblemResults{P
         end
         bus_ix_from = get_bus_from_index(bus_numbers, tap)
         bus_ix_to = get_bus_to_index(bus_numbers, tap)
-        
+
         # Split loss equally between both buses
-        for t = 1:T_length
+        for t in 1:T_length
             FND[bus_ix_from, t] += tap_tap_tx_loss[ix_tap, t] / 2.0
             FND[bus_ix_to, t] += tap_tap_tx_loss[ix_tap, t] / 2.0
         end
     end
-    
+
     return FND
 end
 
@@ -713,10 +958,11 @@ arc = get_arc_axis_from_branch_name(sys, "Line_A_B-double_circuit")
 function get_arc_axis_from_branch_name(sys, branch_name)
     # Remove any double circuit suffix for matching
     trim_branch_name = remove_double_circuit_name(branch_name)
-    
+
     # Find the branch component by partial name match
-    branch = first(PSY.get_components(x -> contains(x.name, trim_branch_name), ACBranch, sys))
-    
+    branch =
+        first(PSY.get_components(x -> contains(x.name, trim_branch_name), ACBranch, sys))
+
     # Return the arc as (from_bus_number, to_bus_number)
     return (branch.arc.from.number, branch.arc.to.number)
 end
@@ -767,21 +1013,37 @@ end
 """
 function compute_iterative_error_based_on_generator_output(res_old, res_new)
     # Read thermal generator outputs from previous iteration
-    th_res = read_variable(res_old, "ActivePowerVariable__ThermalStandard"; table_format = TableFormat.WIDE)
-    re_res = read_variable(res_old, "ActivePowerVariable__RenewableDispatch"; table_format = TableFormat.WIDE)
+    th_res = read_variable(
+        res_old,
+        "ActivePowerVariable__ThermalStandard";
+        table_format = TableFormat.WIDE,
+    )
+    re_res = read_variable(
+        res_old,
+        "ActivePowerVariable__RenewableDispatch";
+        table_format = TableFormat.WIDE,
+    )
     th_old = Matrix{Float64}(th_res[!, 2:end])
     re_old = Matrix{Float64}(re_res[!, 2:end])
-    
+
     # Read thermal generator outputs from current iteration
-    th_res = read_variable(res_new, "ActivePowerVariable__ThermalStandard"; table_format = TableFormat.WIDE)
-    re_res = read_variable(res_new, "ActivePowerVariable__RenewableDispatch"; table_format = TableFormat.WIDE)
+    th_res = read_variable(
+        res_new,
+        "ActivePowerVariable__ThermalStandard";
+        table_format = TableFormat.WIDE,
+    )
+    re_res = read_variable(
+        res_new,
+        "ActivePowerVariable__RenewableDispatch";
+        table_format = TableFormat.WIDE,
+    )
     th_new = Matrix{Float64}(th_res[!, 2:end])
     re_new = Matrix{Float64}(re_res[!, 2:end])
 
     # Compute infinity norm (max absolute change) for each generator type
-    err_th = norm(sum(th_new, dims = 2) - sum(th_old, dims = 2), Inf)  # Max change in thermal dispatch
-    err_re = norm(sum(re_new, dims = 2) - sum(re_old, dims = 2), Inf)  # Max change in renewable dispatch
-    
+    err_th = norm(sum(th_new; dims = 2) - sum(th_old; dims = 2), Inf)  # Max change in thermal dispatch
+    err_re = norm(sum(re_new; dims = 2) - sum(re_old; dims = 2), Inf)  # Max change in renewable dispatch
+
     # Return the maximum error across all generator types
     return maximum([err_th, err_re])
 end

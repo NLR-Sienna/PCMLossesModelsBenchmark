@@ -81,51 +81,63 @@ function build_uc_ed_simulation_with_no_losses(
     else
         ptdf_ed_used = ptdf_ed
     end
-    
+
     # Create UC model: determines generator commitment schedules
-    uc_model = make_ptdf_model_without_losses(sys_uc; device_models = uc_models, optimizer = uc_optimizer, ptdf = ptdf_uc_used, name = "UC")
-    
+    uc_model = make_ptdf_model_without_losses(
+        sys_uc;
+        device_models = uc_models,
+        optimizer = uc_optimizer,
+        ptdf = ptdf_uc_used,
+        name = "UC",
+    )
+
     # Create ED model: optimizes dispatch given fixed commitments
-    ed_model = make_ptdf_model_without_losses(sys_ed; device_models = ed_models, optimizer = ed_optimizer, ptdf = ptdf_ed_used, name = "ED")
-    
+    ed_model = make_ptdf_model_without_losses(
+        sys_ed;
+        device_models = ed_models,
+        optimizer = ed_optimizer,
+        ptdf = ptdf_ed_used,
+        name = "ED",
+    )
+
     # Package models into simulation structure
-    models = SimulationModels(
-        decision_models=[
+    models = SimulationModels(;
+        decision_models = [
             uc_model,
             ed_model,
         ],
     )
-    
+
     # Define temporal sequence and information flow between stages
-    sequence = SimulationSequence(
-        models=models,
-        feedforwards=Dict(
+    sequence = SimulationSequence(;
+        models = models,
+        feedforwards = Dict(
             "ED" => [
                 # Pass generator on/off status from UC to ED
                 # Ensures ED respects UC commitment decisions
-                SemiContinuousFeedforward(
-                    component_type=ThermalStandard,
-                    source=OnVariable,              # UC commitment decision
-                    affected_values=[ActivePowerVariable],  # ED dispatch variable
+                SemiContinuousFeedforward(;
+                    component_type = ThermalStandard,
+                    source = OnVariable,              # UC commitment decision
+                    affected_values = [ActivePowerVariable],  # ED dispatch variable
                 ),
             ],
         ),
         # Maintain state variables (e.g., storage) across stages
-        ini_cond_chronology=InterProblemChronology(),
+        ini_cond_chronology = InterProblemChronology(),
     )
-    
+
     # Create simulation object
-    sim = Simulation(
-        name="Sim",
-        steps=1,                    # Single simulation period
-        models=models,
-        sequence=sequence,
-        simulation_folder=mktempdir(),  # Temporary directory for outputs
+    sim = Simulation(;
+        name = "Sim",
+        steps = 1,                    # Single simulation period
+        models = models,
+        sequence = sequence,
+        simulation_folder = mktempdir(),  # Temporary directory for outputs
     )
-    
+
     # Build the simulation (construct JuMP models and constraints)
-    build!(sim; console_level=Logging.Error)
-    
+    build!(sim; console_level = Logging.Error)
+
     return sim
 end
 
@@ -247,8 +259,17 @@ function build_uc_ed_simulation_with_uc_linear_ed_quadratic_losses(
 
     # Build baseline lossless simulation structure
     # This creates the UC-ED sequence with feedforwards
-    sim = build_uc_ed_simulation_with_no_losses(sys_uc, sys_ed; uc_models, ed_models, uc_optimizer, ed_optimizer, ptdf_uc = ptdf_uc_used, ptdf_ed = ptdf_ed_used)
-    
+    sim = build_uc_ed_simulation_with_no_losses(
+        sys_uc,
+        sys_ed;
+        uc_models,
+        ed_models,
+        uc_optimizer,
+        ed_optimizer,
+        ptdf_uc = ptdf_uc_used,
+        ptdf_ed = ptdf_ed_used,
+    )
+
     # Extract model references for modification
     uc_model = sim.models.decision_models[1]
     ed_model = sim.models.decision_models[2]
@@ -260,14 +281,19 @@ function build_uc_ed_simulation_with_uc_linear_ed_quadratic_losses(
     # Extract loss parameters from previous UC solution
     loss_factors = get_bus_loss_factors(res_old_uc)      # ∂Loss/∂P at each bus
     total_loss_est = get_total_AC_loss(res_old_uc)       # Total AC losses in MW
-    
+
     # Add linearized loss approximation to copper plate balance
     # This modifies the copperplate balance: (G - D) + loss_variable = total_loss_est
     # where loss_variable is constrained by:
     #   loss_variable = Σᵢ loss_factors[ᵢ] × (injection_old[ᵢ] - injection[ᵢ])
     # This is a first-order Taylor expansion around the previous operating point
-    update_copperplate_loss_approximation!(uc_model, loss_factors, total_loss_est, injection_old_uc)
-    
+    update_copperplate_loss_approximation!(
+        uc_model,
+        loss_factors,
+        total_loss_est,
+        injection_old_uc,
+    )
+
     # Update transmission constraints with fictitious nodal demands
     # This ensures branch flow limits account for the additional loading from losses
     # by distributing losses to buses and propagating via PTDF
@@ -276,14 +302,19 @@ function build_uc_ed_simulation_with_uc_linear_ed_quadratic_losses(
     #####################
     ##### ED update #####
     #####################
-    
+
     # Add quadratic loss formulation to ED stage
     # Copper plate balance becomes: (G - D) + loss_variable = 0
     # where loss_variable is constrained by:
     #   loss_variable = -Σₖ Rₖ × (Σⱼ PTDFₖⱼ × V_factorsₖⱼ × injectionⱼ)²
     # This represents accurate P = I²R losses with voltage magnitudes from previous flow
-    update_copperplate_quadratic_loss_approximation!(ed_model, sys_ed, ptdf_ed_used, res_old_ed)
-    
+    update_copperplate_quadratic_loss_approximation!(
+        ed_model,
+        sys_ed,
+        ptdf_ed_used,
+        res_old_ed,
+    )
+
     # Update ED transmission constraints with fictitious nodal demands
     # Same FND method as UC, but based on ED's quadratic loss distribution
     update_transmission_constraints_with_losses!(ed_model, res_old_ed, sys_ed, ptdf_ed_used)

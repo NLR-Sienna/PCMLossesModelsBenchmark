@@ -25,23 +25,36 @@ This is typically used as the first step in iterative loss approximation methods
 function run_lossless_model(
     sys::PSY.System;
     device_models = DEFAULT_UC_MODELS,
-    optimizer = DEFAULT_MILP_OPTIMIZER
+    optimizer = DEFAULT_MILP_OPTIMIZER,
 )
     # Build the optimization model without loss considerations
-    model = build_ptdf_model_without_losses(sys; device_models = device_models, optimizer = optimizer)
-    
+    model = build_ptdf_model_without_losses(
+        sys;
+        device_models = device_models,
+        optimizer = optimizer,
+    )
+
     # Solve the optimization problem
     solve!(model)
 
     # Extract results
     res = OptimizationProblemResults(model)
-    
+
     # Re-optimize to ensure fresh solution (workaround for result extraction)
     JuMP.optimize!(model.internal.container.JuMPmodel)
-    
+
     # Extract net injection values at each bus for loss calculation
-    injection_vals = deepcopy(JuMP.value.(model.internal.container.expressions[PSY.InfrastructureSystems.Optimization.ExpressionKey{ActivePowerBalance,ACBus}("")]).data)
-    
+    injection_vals = deepcopy(
+        JuMP.value.(
+            model.internal.container.expressions[PSY.InfrastructureSystems.Optimization.ExpressionKey{
+                ActivePowerBalance,
+                ACBus,
+            }(
+                "",
+            )]
+        ).data,
+    )
+
     return model, res, injection_vals
 end
 
@@ -75,23 +88,38 @@ function run_linear_loss_model(
     res_old,
     injection_old;
     device_models = DEFAULT_UC_MODELS,
-    optimizer = DEFAULT_MILP_OPTIMIZER
+    optimizer = DEFAULT_MILP_OPTIMIZER,
 )
     # Build model with linear loss approximation around previous operating point
-    model = build_ptdf_model_with_linear_losses(sys, res_old, injection_old; device_models = device_models, optimizer = optimizer)
-    
+    model = build_ptdf_model_with_linear_losses(
+        sys,
+        res_old,
+        injection_old;
+        device_models = device_models,
+        optimizer = optimizer,
+    )
+
     # Solve the optimization problem
     solve!(model)
 
     # Extract results
     res = OptimizationProblemResults(model)
-    
+
     # Re-optimize to ensure fresh solution (workaround for result extraction)
     JuMP.optimize!(model.internal.container.JuMPmodel)
-    
+
     # Extract updated injection values for convergence checking and next iteration
-    injection_vals = deepcopy(JuMP.value.(model.internal.container.expressions[PSY.InfrastructureSystems.Optimization.ExpressionKey{ActivePowerBalance,ACBus}("")]).data)
-    
+    injection_vals = deepcopy(
+        JuMP.value.(
+            model.internal.container.expressions[PSY.InfrastructureSystems.Optimization.ExpressionKey{
+                ActivePowerBalance,
+                ACBus,
+            }(
+                "",
+            )]
+        ).data,
+    )
+
     return model, res, injection_vals
 end
 
@@ -147,17 +175,25 @@ function run_iterative_linear_loss_model(
     optimizer = DEFAULT_MILP_OPTIMIZER,
 )
     # Step 1: Solve initial lossless model to get starting point
-    model_old, res_old, injection_old = run_lossless_model(sys; device_models = device_models, optimizer = optimizer);
-    
+    model_old, res_old, injection_old =
+        run_lossless_model(sys; device_models = device_models, optimizer = optimizer)
+
     # Step 2: Iterate until convergence or max iterations
-    for i = 1:max_iter
+    for i in 1:max_iter
         println("Starting Iteration $i")
-        
+
         # Solve model with losses linearized around previous solution
-        model_new, res_new, injection_new = run_linear_loss_model(sys, res_old, injection_old; device_models = device_models, optimizer = optimizer);
-        
+        model_new, res_new, injection_new = run_linear_loss_model(
+            sys,
+            res_old,
+            injection_old;
+            device_models = device_models,
+            optimizer = optimizer,
+        )
+
         # Compute convergence metric (change in generator outputs)
-        error_iteration = compute_iterative_error_based_on_generator_output(res_old, res_new)
+        error_iteration =
+            compute_iterative_error_based_on_generator_output(res_old, res_new)
         println("Current error: $(error_iteration)")
         obj_func_old = res_old.optimizer_stats[1, "objective_value"]
         obj_func_new = res_new.optimizer_stats[1, "objective_value"]
@@ -168,20 +204,22 @@ function run_iterative_linear_loss_model(
         println("Total loss current iteration: $(total_losses_new)")
         println("Total Loss Sum Previous Iteration: $(sum(total_losses_old))")
         println("Total Loss Sum Current Iteration: $(sum(total_losses_new))")
-        
+
         # Check for convergence
         if error_iteration < error_tol
             println("Finished iterative run at iteration $i with error $(error_iteration)")
             return res_new
         end
-        
+
         # Update for next iteration
         res_old = res_new
         injection_old = injection_new
-        
+
         # Handle max iterations reached
         if i == max_iter
-            println("Reached maximum number of iterations ($max_iter) with error $(error_iteration)")
+            println(
+                "Reached maximum number of iterations ($max_iter) with error $(error_iteration)",
+            )
             return res_new
         end
     end

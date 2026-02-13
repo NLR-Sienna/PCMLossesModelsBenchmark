@@ -39,7 +39,6 @@ Links individual bus injections to total system losses via loss factors.
 """
 struct LineLossConstraintApproximation <: PSI.ConstraintType end
 
-
 """
     make_ptdf_model_without_losses(
         sys::PSY.System
@@ -84,8 +83,16 @@ function make_ptdf_model_without_losses(
     else
         ptdf_used = ptdf
     end
-    template_uc = ProblemTemplate(NetworkModel(PTDFPowerModel; PTDF_matrix = ptdf_used, use_slacks=true, duals=[CopperPlateBalanceConstraint], power_flow_evaluation=PowerFlows.ACPowerFlow(; calculate_loss_factors=true)))
-    
+    template_uc = ProblemTemplate(
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = ptdf_used,
+            use_slacks = true,
+            duals = [CopperPlateBalanceConstraint],
+            power_flow_evaluation = PowerFlows.ACPowerFlow(; calculate_loss_factors = true),
+        ),
+    )
+
     # Set device models for all system components
     for (device_type, model) in device_models
         set_device_model!(template_uc, device_type, model)
@@ -133,14 +140,13 @@ function build_ptdf_model_without_losses(
     optimizer = DEFAULT_MILP_OPTIMIZER,
     ptdf = nothing,
 )
-
     decision_model = make_ptdf_model_without_losses(
         sys;
         device_models,
         optimizer,
         ptdf,
     )
-    build!(decision_model, output_dir = mktempdir())
+    build!(decision_model; output_dir = mktempdir())
     return decision_model
 end
 
@@ -163,14 +169,20 @@ function add_current_loss_variables!(model::PSI.DecisionModel)
     # Access the optimization container
     container = model.internal.container
     time_steps = PSI.get_time_steps(container)
-    
+
     # Get reference buses from copper plate balance constraint
     con_bal = PSI.get_constraint(container, CopperPlateBalanceConstraint(), PSY.System)
     ref_buses = axes(con_bal, 1)
-    
+
     # Create variable container for loss variables
-    variable = PSI.add_variable_container!(container, LineLossTotalApproximation(), PSY.System, ref_buses, time_steps)
-    
+    variable = PSI.add_variable_container!(
+        container,
+        LineLossTotalApproximation(),
+        PSY.System,
+        ref_buses,
+        time_steps,
+    )
+
     # Create JuMP variables for each reference bus and time step
     for ref_bus in ref_buses, t in time_steps
         variable[ref_bus, t] = JuMP.@variable(
@@ -205,22 +217,26 @@ where:
 
 This formulation allows the optimizer to adjust generation to compensate for losses.
 """
-function add_current_loss_to_copperplate_balance!(model::PSI.DecisionModel, loss_variable, total_loss_est)
+function add_current_loss_to_copperplate_balance!(
+    model::PSI.DecisionModel,
+    loss_variable,
+    total_loss_est,
+)
     container = model.internal.container
     time_steps = PSI.get_time_steps(container)
     base_power = PSI.get_base_power(container)  # System base power for per-unit conversion
-    
+
     # Get copper plate balance constraint (originally: G - D = 0)
     con_bal = PSI.get_constraint(container, CopperPlateBalanceConstraint(), PSY.System)
     ref_buses = axes(con_bal, 1)
     ref_bus = only(ref_buses)  # Ensure single reference bus exists
-    
+
     for t in time_steps
         constraint = con_bal[ref_bus, t]
-        
+
         # Add loss variable to left-hand side: (G - D) + loss_variable
         set_normalized_coefficient(constraint, loss_variable[ref_bus, t], 1)
-        
+
         # Update right-hand side with loss estimate in per-unit
         # Final form: (G - D) + loss_variable = total_loss_est
         rhs = normalized_rhs(constraint)
@@ -255,18 +271,21 @@ quadratic constraint, allowing more accurate loss representation in NLP models.
 The RHS remains zero because the quadratic loss constraint directly expresses
 the loss_variable as a quadratic function of bus injections.
 """
-function add_quadratic_current_loss_to_copperplate_balance!(model::PSI.DecisionModel, loss_variable)
+function add_quadratic_current_loss_to_copperplate_balance!(
+    model::PSI.DecisionModel,
+    loss_variable,
+)
     container = model.internal.container
     time_steps = PSI.get_time_steps(container)
-    
+
     # Get copper plate balance constraint (originally: G - D = 0)
     con_bal = PSI.get_constraint(container, CopperPlateBalanceConstraint(), PSY.System)
     ref_buses = axes(con_bal, 1)
     ref_bus = only(ref_buses)  # Ensure single reference bus exists
-    
+
     for t in time_steps
         constraint = con_bal[ref_bus, t]
-        
+
         # Add loss variable to left-hand side: (G - D) + loss_variable = 0
         # The loss_variable value is determined by a separate quadratic constraint
         set_normalized_coefficient(constraint, loss_variable[ref_bus, t], 1)
@@ -298,11 +317,11 @@ The constraint updates as the optimization adjusts bus injections from the previ
 function add_current_loss_constraint_approximation!(model, loss_factors, injection_old)
     container = model.internal.container
     time_steps = PSI.get_time_steps(container)
-    
+
     # Retrieve the total loss variable
     loss_variable = PSI.get_variable(container, LineLossTotalApproximation(), PSY.System)
     ref_buses = axes(loss_variable, 1)
-    
+
     # Create constraint container for loss approximation
     constraint = PSI.add_constraints_container!(
         container,
@@ -311,18 +330,26 @@ function add_current_loss_constraint_approximation!(model, loss_factors, injecti
         ref_buses,
         time_steps,
     )
-    
+
     # Get current iteration's injection expression
-    injection = container.expressions[InfrastructureSystems.Optimization.ExpressionKey{ActivePowerBalance,ACBus}("")]
+    injection = container.expressions[InfrastructureSystems.Optimization.ExpressionKey{
+        ActivePowerBalance,
+        ACBus,
+    }(
+        "",
+    )]
     bus_ax = axes(injection, 1)
     num_buses = length(bus_ax)
-    
+
     # Create linearized loss constraint for each time period
     # Loss ≈ Σ (change in injection) × (loss sensitivity at that bus)
     for ref_bus in ref_buses, t in time_steps
         constraint[ref_bus, t] = JuMP.@constraint(
             PSI.get_jump_model(container),
-            loss_variable[ref_bus, t] == sum((injection_old[i, t] - injection[bus_ax[i], t]) * loss_factors[i, t] for i in 1:num_buses) 
+            loss_variable[ref_bus, t] == sum(
+                (injection_old[i, t] - injection[bus_ax[i], t]) * loss_factors[i, t] for
+                i in 1:num_buses
+            )
         )
     end
 end
@@ -370,11 +397,11 @@ function add_current_loss_constraint_quadratic_approximation!(model, sys, ptdf, 
     container = model.internal.container
     time_steps = PSI.get_time_steps(container)
     arcs_length = length(axes(ptdf, 2))
-    
+
     # Retrieve the total loss variable
     loss_variable = PSI.get_variable(container, LineLossTotalApproximation(), PSY.System)
     ref_buses = axes(loss_variable, 1)
-    
+
     # Create constraint container for loss approximation
     constraint = PSI.add_constraints_container!(
         container,
@@ -386,9 +413,14 @@ function add_current_loss_constraint_quadratic_approximation!(model, sys, ptdf, 
 
     # Extract branch resistance values from system data
     R, _ = get_RX_vector(sys, ptdf)
-    
+
     # Get current iteration's injection expression (decision variables)
-    injection = container.expressions[InfrastructureSystems.Optimization.ExpressionKey{ActivePowerBalance,ACBus}("")]
+    injection = container.expressions[InfrastructureSystems.Optimization.ExpressionKey{
+        ActivePowerBalance,
+        ACBus,
+    }(
+        "",
+    )]
     bus_ax = axes(injection, 1)
     bus_length = length(bus_ax)
 
@@ -402,7 +434,14 @@ function add_current_loss_constraint_quadratic_approximation!(model, sys, ptdf, 
         constraint[ref_bus, t] = JuMP.@constraint(
             PSI.get_jump_model(container),
             # Negative sign because losses reduce available power
-            loss_variable[ref_bus, t] == -sum(R[k] * (sum(V_line[k, t] / V_bus[j, t] * ptdf[k, j] * injection[bus_ax[j], t] for j in 1:bus_length))^2 for k in 1:arcs_length)
+            loss_variable[ref_bus, t] ==
+            -sum(
+                R[k] *
+                (sum(
+                    V_line[k, t] / V_bus[j, t] * ptdf[k, j] * injection[bus_ax[j], t]
+                    for j in 1:bus_length
+                ))^2 for k in 1:arcs_length
+            )
         )
     end
 end
@@ -428,13 +467,18 @@ This is a convenience function that orchestrates the three-step process:
 2. Update copper plate balance to include losses
 3. Add linearized constraints relating injections to losses
 """
-function update_copperplate_loss_approximation!(model::PSI.DecisionModel, loss_factors, total_loss_est, injection_old)
+function update_copperplate_loss_approximation!(
+    model::PSI.DecisionModel,
+    loss_factors,
+    total_loss_est,
+    injection_old,
+)
     # Step 1: Add decision variables for total losses
     loss_var = add_current_loss_variables!(model)
-    
+
     # Step 2: Modify nodal balance to account for losses
     add_current_loss_to_copperplate_balance!(model, loss_var, total_loss_est)
-    
+
     # Step 3: Add linearized loss approximation constraints
     add_current_loss_constraint_approximation!(model, loss_factors, injection_old)
 end
@@ -474,13 +518,18 @@ Typically used for economic dispatch (ED) problems where:
 suitable for MILP. This function uses full quadratic formulation, more accurate
 but requires NLP solver.
 """
-function update_copperplate_quadratic_loss_approximation!(model::PSI.DecisionModel, sys, ptdf, res_old)
+function update_copperplate_quadratic_loss_approximation!(
+    model::PSI.DecisionModel,
+    sys,
+    ptdf,
+    res_old,
+)
     # Step 1: Add decision variables for total losses
     loss_var = add_current_loss_variables!(model)
-    
+
     # Step 2: Modify nodal balance to account for losses (without fixed RHS)
     add_quadratic_current_loss_to_copperplate_balance!(model, loss_var)
-    
+
     # Step 3: Add quadratic loss approximation constraints (P = I²R formulation)
     add_current_loss_constraint_quadratic_approximation!(model, sys, ptdf, res_old)
 end
@@ -523,15 +572,15 @@ caused by losses, preventing constraint violations in the actual AC power flow.
 function update_transmission_constraints_with_losses!(model, res_old, sys, ptdf)
     container = model.internal.container
     base_power = PSI.get_base_power(container)  # System base power for per-unit conversion
-    
+
     # Compute fictitious nodal demands representing distributed losses
     FND = get_fictitious_nodal_demand_by_loss(res_old, sys)
-    
+
     # Get PTDF matrix and system topology information
     bus_axes = axes(ptdf, 1)
     num_bus = length(bus_axes)
     arc_axes = axes(ptdf, 2)
-    
+
     # Get network flow constraints for lines and transformers
     con_line = PSI.get_constraint(container, NetworkFlowConstraint(), Line)
     con_tap = PSI.get_constraint(container, NetworkFlowConstraint(), TapTransformer)
@@ -541,13 +590,16 @@ function update_transmission_constraints_with_losses!(model, res_old, sys, ptdf)
         rhs = normalized_rhs(con_line[k])
         line_name = k[1]
         time = k[2]
-        
+
         # Find corresponding arc in PTDF matrix
         arc_ax = get_arc_axis_from_branch_name(sys, line_name)
         ptdf_ix = findfirst(x -> x == arc_ax, arc_axes)
-        
+
         # Update RHS: add contribution from fictitious demands via PTDF
-        set_normalized_rhs(con_line[k], rhs + sum(ptdf[ptdf_ix, i] * FND[i, time] / base_power for i in 1:num_bus))
+        set_normalized_rhs(
+            con_line[k],
+            rhs + sum(ptdf[ptdf_ix, i] * FND[i, time] / base_power for i in 1:num_bus),
+        )
     end
 
     # Update tap transformer flow constraints
@@ -555,15 +607,18 @@ function update_transmission_constraints_with_losses!(model, res_old, sys, ptdf)
         rhs = normalized_rhs(con_tap[k])
         tap_name = k[1]
         time = k[2]
-        
+
         # Find corresponding arc in PTDF matrix
         arc_ax = get_arc_axis_from_branch_name(sys, tap_name)
         ptdf_ix = findfirst(x -> x == arc_ax, arc_axes)
-        
+
         # Update RHS: add contribution from fictitious demands via PTDF
-        set_normalized_rhs(con_tap[k], rhs + sum(ptdf[ptdf_ix, i] * FND[i, time] / base_power for i in 1:num_bus))
+        set_normalized_rhs(
+            con_tap[k],
+            rhs + sum(ptdf[ptdf_ix, i] * FND[i, time] / base_power for i in 1:num_bus),
+        )
     end
-    return 
+    return
 end
 
 """
@@ -610,20 +665,25 @@ function build_ptdf_model_with_linear_losses(
 )
     # Step 1: Build baseline PTDF model structure (without loss terms initially)
     model = build_ptdf_model_without_losses(sys; device_models, optimizer)
-    
+
     # Step 2: Extract loss parameters from previous solution
     loss_factors = get_bus_loss_factors(res_old)      # ∂Loss/∂P at each bus
     total_loss_est = get_total_AC_loss(res_old)       # Total AC losses in MW
-    
+
     # Step 3: Add linearized loss approximation to copper plate balance
     # This modifies the copperplate balance to account for generation needed to cover losses
-    update_copperplate_loss_approximation!(model, loss_factors, total_loss_est, injection_old)
-    
+    update_copperplate_loss_approximation!(
+        model,
+        loss_factors,
+        total_loss_est,
+        injection_old,
+    )
+
     # Step 4: Update transmission constraints with fictitious nodal demands
     # This ensures branch flows reflect the additional loading from losses
     ptdf = PTDF(sys)
     update_transmission_constraints_with_losses!(model, res_old, sys, ptdf)
-    
+
     return model
 end
 
@@ -690,7 +750,7 @@ function build_ptdf_model_with_quadratic_losses(
 )
     # Compute PTDF matrix (needed for quadratic loss formulation)
     ptdf = PTDF(sys)
-    
+
     # Step 1: Build baseline ED model structure (without loss terms initially)
     model = build_ptdf_model_without_losses(sys; device_models, optimizer, ptdf)
 
@@ -701,6 +761,6 @@ function build_ptdf_model_with_quadratic_losses(
     # Step 3: Update transmission constraints with fictitious nodal demands
     # Ensures branch flows reflect the additional loading from losses
     update_transmission_constraints_with_losses!(model, res_old, sys, ptdf)
-    
+
     return model
 end
