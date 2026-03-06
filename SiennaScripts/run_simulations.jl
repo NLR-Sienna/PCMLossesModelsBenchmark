@@ -110,6 +110,68 @@ function run_uc_ed_lossless_simulation(
     return sim, sim_res, injection_old_uc, injection_old_ed
 end
 
+function run_uc_ed_acopf_simulation(
+    sys_uc::PSY.System,
+    sys_ed::PSY.System;
+    uc_models = DEFAULT_UC_MODELS,
+    ed_models = DEFAULT_ED_MODELS,
+    uc_optimizer = DEFAULT_MILP_OPTIMIZER,
+    ed_optimizer = DEFAULT_NLP_OPTIMIZER,
+    ptdf_uc = nothing,
+    ptdf_ed = nothing,
+)
+    # Use provided PTDF matrices or compute them if not provided
+    if isnothing(ptdf_uc)
+        ptdf_uc_used = PTDF(sys_uc)
+    else
+        ptdf_uc_used = ptdf_uc
+    end
+    if isnothing(ptdf_ed)
+        ptdf_ed_used = PTDF(sys_ed)
+    else
+        ptdf_ed_used = ptdf_ed
+    end
+
+    # Build the two-stage simulation (UC → ED)
+    sim = build_uc_ed_simulation_with_acopf(
+        sys_uc,
+        sys_ed;
+        uc_models,
+        ed_models,
+        uc_optimizer,
+        ed_optimizer,
+        ptdf_uc = ptdf_uc_used,
+        ptdf_ed = ptdf_ed_used,
+    )
+
+    # Extract internal containers for direct access to optimization models
+    uc = sim.models.decision_models[1].internal.container
+    ed = sim.models.decision_models[2].internal.container
+
+    # Execute the full simulation sequence
+    execute!(sim)
+
+    # Re-optimize both models to ensure fresh solution (workaround for result extraction)
+    optimize!(uc.JuMPmodel)
+
+    # Extract bus injection values for both stages (Generation - Demand at each bus)
+    injection_old_uc = deepcopy(
+        JuMP.value.(
+            uc.expressions[PSY.InfrastructureSystems.Optimization.ExpressionKey{
+                ActivePowerBalance,
+                ACBus,
+            }(
+                "",
+            )]
+        ).data,
+    )
+
+    # Package results for return
+    sim_res = SimulationResults(sim)
+
+    return sim, sim_res, injection_old_uc
+end
+
 """
     run_uc_ed_quadratic_loss_simulation(
         sys_uc::PSY.System,
@@ -425,6 +487,181 @@ function run_iterative_uc_ed_quadratic_loss_simulation(
         res_old_ed = res_new_ed
         injection_old_uc = injection_new_uc
         injection_old_ed = injection_new_ed
+
+        # Handle max iterations reached without convergence
+        if i == max_iter
+            println(
+                "Reached maximum number of iterations ($max_iter) with error $(error_iteration)",
+            )
+            return sim_res_new
+        end
+    end
+end
+
+function run_uc_linear_loss_ed_acopf_simulation(
+    sys_uc::PSY.System,
+    sys_ed::PSY.System,
+    res_old_uc,
+    res_old_ed,
+    injection_old_uc;
+    uc_models = DEFAULT_UC_MODELS,
+    ed_models = DEFAULT_ED_MODELS,
+    uc_optimizer = DEFAULT_MILP_OPTIMIZER,
+    ed_optimizer = DEFAULT_NLP_OPTIMIZER,
+    ptdf_uc = nothing,
+    ptdf_ed = nothing,
+)
+    # Use provided PTDF matrices or compute them if not provided
+    if isnothing(ptdf_uc)
+        ptdf_uc_used = PTDF(sys_uc)
+    else
+        ptdf_uc_used = ptdf_uc
+    end
+    if isnothing(ptdf_ed)
+        ptdf_ed_used = PTDF(sys_ed)
+    else
+        ptdf_ed_used = ptdf_ed
+    end
+
+    # Build simulation with hybrid loss modeling:
+    # - UC uses linear losses (MILP-compatible)
+    # - ED uses quadratic losses (more accurate)
+    sim = build_uc_ed_simulation_with_acopf_and_uc_linear_losses(
+        sys_uc,
+        sys_ed,
+        res_old_uc,
+        res_old_ed,
+        injection_old_uc;
+        uc_models = uc_models,
+        ed_models = ed_models,
+        uc_optimizer = uc_optimizer,
+        ed_optimizer = ed_optimizer,
+        ptdf_uc = ptdf_uc_used,
+        ptdf_ed = ptdf_ed_used,
+    )
+
+    # Extract internal containers for direct access to optimization models
+    uc = sim.models.decision_models[1].internal.container
+    ed = sim.models.decision_models[2].internal.container
+
+    # Execute the full simulation sequence with loss constraints
+    execute!(sim)
+
+    # Re-optimize both models to ensure fresh solution (workaround for result extraction)
+    optimize!(uc.JuMPmodel)
+
+    # Extract updated bus injection values for convergence checking
+    injection_new_uc = deepcopy(
+        JuMP.value.(
+            uc.expressions[PSY.InfrastructureSystems.Optimization.ExpressionKey{
+                ActivePowerBalance,
+                ACBus,
+            }(
+                "",
+            )]
+        ).data,
+    )
+
+    # Package results for return
+    sim_res = SimulationResults(sim)
+
+    return sim, sim_res, injection_new_uc
+end
+
+function run_iterative_uc_linear_ed_acopf_simulation(
+    sys_uc::PSY.System,
+    sys_ed::PSY.System;
+    uc_models = DEFAULT_UC_MODELS,
+    ed_models = DEFAULT_ED_MODELS,
+    uc_optimizer = DEFAULT_MILP_OPTIMIZER,
+    ed_optimizer = DEFAULT_NLP_OPTIMIZER,
+    ptdf_uc = nothing,
+    ptdf_ed = nothing,
+    max_iter = 5,
+    error_tol = 1e-1,
+)
+    # Use provided PTDF matrices or compute them if not provided
+    # Pre-computing these can save time in iterative runs
+    if isnothing(ptdf_uc)
+        ptdf_uc_used = PTDF(sys_uc)
+    else
+        ptdf_uc_used = ptdf_uc
+    end
+    if isnothing(ptdf_ed)
+        ptdf_ed_used = PTDF(sys_ed)
+    else
+        ptdf_ed_used = ptdf_ed
+    end
+
+    # Step 1: Solve initial lossless model to get starting point
+    # This provides the base operating point for loss linearization
+    sim_old, sim_res_old, injection_old_uc =
+        run_uc_ed_acopf_simulation(
+            sys_uc,
+            sys_ed;
+            uc_models = uc_models,
+            ed_models = ed_models,
+            uc_optimizer = uc_optimizer,
+            ed_optimizer = ed_optimizer,
+            ptdf_uc = ptdf_uc_used,
+            ptdf_ed = ptdf_ed_used,
+        )
+
+    # Extract individual stage results for convergence tracking
+    res_old_uc = get_decision_problem_results(sim_res_old, "UC")
+    res_old_ed = get_decision_problem_results(sim_res_old, "ED")
+
+    # Step 2: Iterate until convergence or max iterations
+    for i in 1:max_iter
+        println("Starting Iteration $i")
+
+        # Solve simulation with losses approximated around previous solution
+        sim_new, sim_res_new, injection_new_uc =
+            run_uc_linear_loss_ed_acopf_simulation(
+                sys_uc,
+                sys_ed,
+                res_old_uc,
+                res_old_ed,
+                injection_old_uc;
+                uc_models = UC_MODELS,
+                ed_models = ED_MODELS,
+                uc_optimizer = uc_optimizer,
+                ed_optimizer = ed_optimizer,
+                ptdf_uc = ptdf_uc_used,
+                ptdf_ed = ptdf_ed_used,
+            )
+
+        # Extract stage results for comparison
+        res_new_uc = get_decision_problem_results(sim_res_new, "UC")
+        res_new_ed = get_decision_problem_results(sim_res_new, "ED")
+
+        # Compute convergence metrics and print diagnostics
+        # Focus on ED stage as it has more accurate loss representation
+        obj_func_old = read_optimizer_stats(res_old_uc)[1, "objective_value"]
+        obj_func_new = read_optimizer_stats(res_new_uc)[1, "objective_value"]
+        total_losses_old = get_total_AC_loss_CATS(res_old_ed)  # Time-series of losses
+        total_losses_new = get_total_AC_loss_CATS(res_new_ed)
+
+        # Print iteration diagnostics
+        println("Current UC objective function difference: $(obj_func_new - obj_func_old)")
+        println("Total ED loss previous iteration: $(total_losses_old)")
+        println("Total ED loss current iteration: $(total_losses_new)")
+        println("Total ED Loss Sum Previous Iteration: $(sum(total_losses_old))")
+        println("Total ED Loss Sum Current Iteration: $(sum(total_losses_new))")
+
+        # Convergence criterion: absolute change in total losses
+        error_iteration = abs(sum(total_losses_new) - sum(total_losses_old))
+
+        # Check for convergence
+        if error_iteration < error_tol
+            println("Finished iterative run at iteration $i with error $(error_iteration)")
+            return sim_res_new
+        end
+
+        # Update operating point for next iteration
+        res_old_uc = res_new_uc
+        res_old_ed = res_new_ed
+        injection_old_uc = injection_new_uc
 
         # Handle max iterations reached without convergence
         if i == max_iter

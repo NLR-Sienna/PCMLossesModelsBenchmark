@@ -72,6 +72,7 @@ function make_ptdf_model_without_losses(
     optimizer = DEFAULT_MILP_OPTIMIZER,
     ptdf = nothing,
     name = "UC",
+    ignore_pf = false,
 )
 
     # Create problem template with PTDF network model
@@ -83,15 +84,78 @@ function make_ptdf_model_without_losses(
     else
         ptdf_used = ptdf
     end
-    template_uc = ProblemTemplate(
-        NetworkModel(
-            PTDFPowerModel;
-            PTDF_matrix = ptdf_used,
-            use_slacks = true,
-            duals = [CopperPlateBalanceConstraint],
-            power_flow_evaluation = PowerFlows.ACPowerFlow(; calculate_loss_factors = true),
-        ),
+    if !ignore_pf
+        template_uc = ProblemTemplate(
+            NetworkModel(
+                PTDFPowerModel;
+                PTDF_matrix = ptdf_used,
+                use_slacks = true,
+                duals = [CopperPlateBalanceConstraint],
+                power_flow_evaluation = PowerFlows.ACPowerFlow(; calculate_loss_factors = true),
+            ),
+        )
+    else
+        template_uc = ProblemTemplate(
+            NetworkModel(
+                PTDFPowerModel;
+                PTDF_matrix = ptdf_used,
+                use_slacks = true,
+                duals = [CopperPlateBalanceConstraint],
+            ),
+        )
+    end
+
+    # Set device models for all system components
+    for (device_type, model) in device_models
+        set_device_model!(template_uc, device_type, model)
+    end
+
+    # Create the decision model with hourly resolution
+    decision_model = DecisionModel(
+        template_uc,
+        sys;
+        optimizer = optimizer,
+        name = name,
+        store_variable_names = true,  # Store names for debugging
     )
+
+    return decision_model
+end
+
+function make_acopf_model(
+    sys::PSY.System;
+    device_models = DEFAULT_ED_MODELS,
+    optimizer = DEFAULT_NLP_OPTIMIZER,
+    ptdf = nothing,
+    name = "ED",
+    ignore_pf = false,
+)
+
+    # Create problem template with PTDF network model
+    # - use_slacks: Add slack variables for infeasibility diagnosis
+    # - duals: Compute dual variables for nodal balance constraints
+    # - calculate_loss_factors: Enable loss factor computation in AC power flow
+    if isnothing(ptdf)
+        ptdf_used = PTDF(sys)
+    else
+        ptdf_used = ptdf
+    end
+    if !ignore_pf
+        template_uc = ProblemTemplate(
+            NetworkModel(
+                ACPPowerModel;
+                use_slacks = true,
+                power_flow_evaluation = PowerFlows.ACPowerFlow(; calculate_loss_factors = true),
+            ),
+        )
+    else
+        template_uc = ProblemTemplate(
+            NetworkModel(
+                ACPPowerModel;
+                use_slacks = true,
+            ),
+        )
+    end
 
     # Set device models for all system components
     for (device_type, model) in device_models
@@ -139,12 +203,14 @@ function build_ptdf_model_without_losses(
     device_models = DEFAULT_UC_MODELS,
     optimizer = DEFAULT_MILP_OPTIMIZER,
     ptdf = nothing,
+    ignore_pf = false,
 )
     decision_model = make_ptdf_model_without_losses(
         sys;
         device_models,
         optimizer,
         ptdf,
+        ignore_pf,
     )
     build!(decision_model; output_dir = mktempdir())
     return decision_model

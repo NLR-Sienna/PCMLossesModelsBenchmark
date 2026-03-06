@@ -420,7 +420,7 @@ function get_total_AC_loss(res)
     FromTo_Line = Matrix{Float64}(
         read_aux_variable(
             res,
-            "PowerFlowLineActivePowerFromTo__Line";
+            "PowerFlowBranchActivePowerFromTo__Line";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -430,7 +430,7 @@ function get_total_AC_loss(res)
     ToFrom_Line = Matrix{Float64}(
         read_aux_variable(
             res,
-            "PowerFlowLineActivePowerToFrom__Line";
+            "PowerFlowBranchActivePowerToFrom__Line";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -442,7 +442,7 @@ function get_total_AC_loss(res)
     FromTo_TapTransformer = Matrix{Float64}(
         read_aux_variable(
             res,
-            "PowerFlowLineActivePowerFromTo__TapTransformer";
+            "PowerFlowBranchActivePowerFromTo__TapTransformer";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -452,7 +452,7 @@ function get_total_AC_loss(res)
     ToFrom_TapTransformer = Matrix{Float64}(
         read_aux_variable(
             res,
-            "PowerFlowLineActivePowerToFrom__TapTransformer";
+            "PowerFlowBranchActivePowerToFrom__TapTransformer";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -479,7 +479,7 @@ function get_total_AC_loss(
     FromTo_Line = Matrix{Float64}(
         read_realized_aux_variable(
             res,
-            "PowerFlowLineActivePowerFromTo__Line";
+            "PowerFlowBranchActivePowerFromTo__Line";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -489,7 +489,7 @@ function get_total_AC_loss(
     ToFrom_Line = Matrix{Float64}(
         read_realized_aux_variable(
             res,
-            "PowerFlowLineActivePowerToFrom__Line";
+            "PowerFlowBranchActivePowerToFrom__Line";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -501,7 +501,7 @@ function get_total_AC_loss(
     FromTo_TapTransformer = Matrix{Float64}(
         read_realized_aux_variable(
             res,
-            "PowerFlowLineActivePowerFromTo__TapTransformer";
+            "PowerFlowBranchActivePowerFromTo__TapTransformer";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -511,7 +511,66 @@ function get_total_AC_loss(
     ToFrom_TapTransformer = Matrix{Float64}(
         read_realized_aux_variable(
             res,
-            "PowerFlowLineActivePowerToFrom__TapTransformer";
+            "PowerFlowBranchActivePowerToFrom__TapTransformer";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+
+    T_length = size(FromTo_Line, 1)
+    total_loss = zeros(T_length)
+
+    # Sum all branch losses: Loss_k = P_from_to + P_to_from
+    for t in 1:T_length
+        total_loss[t] =
+            sum(FromTo_Line[t, :] + ToFrom_Line[t, :]) +
+            sum(FromTo_TapTransformer[t, :] + ToFrom_TapTransformer[t, :])
+    end
+    return total_loss
+end
+
+function get_total_AC_loss_CATS(
+    res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults},
+)
+    # Read power flows in both directions for lines
+    FromTo_Line = Matrix{Float64}(
+        read_realized_aux_variable(
+            res,
+            "PowerFlowBranchActivePowerFromTo__Line";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+    ToFrom_Line = Matrix{Float64}(
+        read_realized_aux_variable(
+            res,
+            "PowerFlowBranchActivePowerToFrom__Line";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+
+    # Read power flows in both directions for tap transformers
+    FromTo_TapTransformer = Matrix{Float64}(
+        read_realized_aux_variable(
+            res,
+            "PowerFlowBranchActivePowerFromTo__Transformer2W";
+            table_format = TableFormat.WIDE,
+        )[
+            !,
+            2:end,
+        ],
+    )
+    ToFrom_TapTransformer = Matrix{Float64}(
+        read_realized_aux_variable(
+            res,
+            "PowerFlowBranchActivePowerToFrom__Transformer2W";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -553,7 +612,7 @@ function get_line_loss(res)
     FromTo_Line = Matrix{Float64}(
         read_aux_variable(
             res,
-            "PowerFlowLineActivePowerFromTo__Line";
+            "PowerFlowBranchActivePowerFromTo__Line";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -563,7 +622,7 @@ function get_line_loss(res)
     ToFrom_Line = Matrix{Float64}(
         read_aux_variable(
             res,
-            "PowerFlowLineActivePowerToFrom__Line";
+            "PowerFlowBranchActivePowerToFrom__Line";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -580,7 +639,7 @@ function get_line_loss(
     FromTo_Line = Matrix{Float64}(
         read_realized_aux_variable(
             res,
-            "PowerFlowLineActivePowerFromTo__Line";
+            "PowerFlowBranchActivePowerFromTo__Line";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -590,7 +649,7 @@ function get_line_loss(
     ToFrom_Line = Matrix{Float64}(
         read_realized_aux_variable(
             res,
-            "PowerFlowLineActivePowerToFrom__Line";
+            "PowerFlowBranchActivePowerToFrom__Line";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -623,7 +682,7 @@ function get_tap_transformer_loss(res)
     FromTo_TapTransformer = Matrix{Float64}(
         read_aux_variable(
             res,
-            "PowerFlowLineActivePowerFromTo__TapTransformer";
+            "PowerFlowBranchActivePowerFromTo__TapTransformer";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -633,7 +692,7 @@ function get_tap_transformer_loss(res)
     ToFrom_TapTransformer = Matrix{Float64}(
         read_aux_variable(
             res,
-            "PowerFlowLineActivePowerToFrom__TapTransformer";
+            "PowerFlowBranchActivePowerToFrom__TapTransformer";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -650,7 +709,7 @@ function get_tap_transformer_loss(
     FromTo_TapTransformer = Matrix{Float64}(
         read_realized_aux_variable(
             res,
-            "PowerFlowLineActivePowerFromTo__TapTransformer";
+            "PowerFlowBranchActivePowerFromTo__TapTransformer";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -660,7 +719,7 @@ function get_tap_transformer_loss(
     ToFrom_TapTransformer = Matrix{Float64}(
         read_realized_aux_variable(
             res,
-            "PowerFlowLineActivePowerToFrom__TapTransformer";
+            "PowerFlowBranchActivePowerToFrom__TapTransformer";
             table_format = TableFormat.WIDE,
         )[
             !,
@@ -748,12 +807,12 @@ function get_fictitious_nodal_demand_by_loss(res, sys)
     # Read power flow variables
     line_var = read_aux_variable(
         res,
-        "PowerFlowLineActivePowerFromTo__Line";
+        "PowerFlowBranchActivePowerFromTo__Line";
         table_format = TableFormat.WIDE,
     )
     tap_var = read_aux_variable(
         res,
-        "PowerFlowLineActivePowerFromTo__TapTransformer";
+        "PowerFlowBranchActivePowerFromTo__TapTransformer";
         table_format = TableFormat.WIDE,
     )
     T_length = size(line_var, 1)
@@ -786,6 +845,7 @@ function get_fictitious_nodal_demand_by_loss(res, sys)
     FND = zeros(length(bus_numbers), T_length)
 
     # Allocate line losses (50% to each endpoint)
+    # TODO: use ptdf.network_reduction_data.name_to_arc_map to get the right name used in the constraint keys instead of searching by partial match
     for (ix_line, line_name) in enumerate(line_names)
         line = get_component(Line, sys, line_name)
         if !get_available(line)
@@ -827,12 +887,12 @@ function get_fictitious_nodal_demand_by_loss(
     # Read power flow variables
     line_var = read_realized_aux_variable(
         res,
-        "PowerFlowLineActivePowerFromTo__Line";
+        "PowerFlowBranchActivePowerFromTo__Line";
         table_format = TableFormat.WIDE,
     )
     tap_var = read_realized_aux_variable(
         res,
-        "PowerFlowLineActivePowerFromTo__TapTransformer";
+        "PowerFlowBranchActivePowerFromTo__TapTransformer";
         table_format = TableFormat.WIDE,
     )
     T_length = size(line_var, 1)
@@ -956,6 +1016,8 @@ arc = get_arc_axis_from_branch_name(sys, "Line_A_B-double_circuit")
 ```
 """
 function get_arc_axis_from_branch_name(sys, branch_name)
+    # TODO: use PNM.populate_branch_maps_by_type!(ptdf.network_reduction_data)
+    # TODO: and use ptdf.network_reduction_data.name_to_arc_map to get the right name used in the constraint keys instead of searching by partial match
     # Remove any double circuit suffix for matching
     trim_branch_name = remove_double_circuit_name(branch_name)
 
