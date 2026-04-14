@@ -1,0 +1,559 @@
+const DEFAULT_UC_MODELS = Dict(
+    Line => StaticBranchBounds,
+    #TapTransformer => StaticBranch,
+    #Transformer2W => StaticBranch,
+    PhaseShiftingTransformer => StaticBranch,
+    ThermalStandard => ThermalDispatchNoMin,
+    PowerLoad => StaticPowerLoad,
+    #RenewableDispatch => RenewableFullDispatch,
+    #TwoTerminalGenericHVDCLine => HVDCTwoTerminalLossless,
+    #HydroDispatch => HydroDispatchRunOfRiver,
+)
+
+const DEFAULT_MILP_OPTIMIZER = optimizer_with_attributes(Xpress.Optimizer)
+
+const PSI = PowerSimulations
+const PSY = PowerSystems
+const M_max = 10.0
+
+struct GenerationInvestmentVariable <: PSI.VariableType end
+struct BranchInvestmentVariable <: PSI.VariableType end
+struct BranchCancellingFlowVariable <: PSI.VariableType end
+struct BigMConstraint <: PSI.ConstraintType end
+
+
+"""
+    make_base_ptdf_model(sys; device_models, optimizer, ptdf, name, ignore_pf) -> DecisionModel
+
+Create a PTDF-based `DecisionModel` without building it.  Use `build_base_ptdf_model` to
+also call `build!`.  When `ignore_pf = false` the template includes an AC power flow
+evaluation with loss factor calculation.
+"""
+function make_base_ptdf_model(
+    sys::PSY.System;
+    device_models = DEFAULT_UC_MODELS,
+    optimizer = DEFAULT_MILP_OPTIMIZER,
+    ptdf = nothing,
+    name = "UC",
+    ignore_pf = true,
+)
+
+    # Create problem template with PTDF network model
+    # - use_slacks: Add slack variables for infeasibility diagnosis
+    # - duals: Compute dual variables for nodal balance constraints
+    # - calculate_loss_factors: Enable loss factor computation in AC power flow
+    if isnothing(ptdf)
+        ptdf_used = PTDF(sys)
+    else
+        ptdf_used = ptdf
+    end
+    if !ignore_pf
+        template_uc = ProblemTemplate(
+            NetworkModel(
+                PTDFPowerModel;
+                PTDF_matrix = ptdf_used,
+                use_slacks = true,
+                duals = [CopperPlateBalanceConstraint],
+                power_flow_evaluation = PowerFlows.ACPowerFlow(; calculate_loss_factors = true),
+            ),
+        )
+    else
+        template_uc = ProblemTemplate(
+            NetworkModel(
+                PTDFPowerModel;
+                PTDF_matrix = ptdf_used,
+                use_slacks = true,
+                duals = [CopperPlateBalanceConstraint],
+            ),
+        )
+    end
+
+    # Set device models for all system components
+    for (device_type, model) in device_models
+        set_device_model!(template_uc, device_type, model)
+    end
+
+    # Create the decision model with hourly resolution
+    decision_model = DecisionModel(
+        template_uc,
+        sys;
+        optimizer = optimizer,
+        name = name,
+        store_variable_names = true,  # Store names for debugging
+    )
+
+    return decision_model
+end
+
+"""
+    build_base_ptdf_model(sys; device_models, optimizer, ptdf, ignore_pf) -> DecisionModel
+
+Build and return a PTDF-based `DecisionModel` ready for post-processing.  Internally calls
+`make_base_ptdf_model` followed by `build!`.
+"""
+function build_base_ptdf_model(
+    sys::PSY.System;
+    device_models = DEFAULT_UC_MODELS,
+    optimizer = DEFAULT_MILP_OPTIMIZER,
+    ptdf = nothing,
+    ignore_pf = true,
+)
+    decision_model = make_base_ptdf_model(
+        sys;
+        device_models,
+        optimizer,
+        ptdf,
+        ignore_pf,
+    )
+    build!(decision_model; output_dir = mktempdir())
+    return decision_model
+end
+
+# ---------------------------------------------------------------------------
+# Flow-cancelling (Caramanis et al., IEEE PES 2016) post-processing
+# ---------------------------------------------------------------------------
+
+"""
+    _get_ptdf_shift_term(ptdf, sys, line_name, from_bus_num, to_bus_num) -> Float64
+
+Return the shift factor for line `line_name` in `sys` due to injecting at `from_bus_num`
+minus the factor due to injecting at `to_bus_num` (eq. 3: Δ_{l,k} = H_{from_k,l} − H_{to_k,l}).
+Returns 0.0 with a warning when the branch or a bus is not found in `ptdf`.
+"""
+function _get_ptdf_shift_term(
+    ptdf,
+    sys,
+    line_name::AbstractString,
+    from_bus_num::Int,
+    to_bus_num::Int,
+)
+    bus_lookup = ptdf.lookup[1]   # bus number  -> col index
+    br_lookup  = ptdf.lookup[2]   # branch arc  -> row index
+
+    line_arc = get_arc(get_component(PSY.Branch, sys, line_name))
+    line_tuple = (get_number(get_from(line_arc)), get_number(get_to(line_arc)))
+    if !haskey(br_lookup, line_tuple)
+        @warn "Branch with arc '$line_arc' and name `$line_name` not found in PTDF; shift term set to 0."
+        return 0.0
+    end
+    if !haskey(bus_lookup, from_bus_num) || !haskey(bus_lookup, to_bus_num)
+        @warn "Bus $from_bus_num or $to_bus_num not found in PTDF; shift term set to 0."
+        return 0.0
+    end
+
+    line_arc_ix    = br_lookup[line_tuple]
+    from_bus_ix = bus_lookup[from_bus_num]
+    to_bus_ix   = bus_lookup[to_bus_num]
+    return ptdf.data[from_bus_ix, line_arc_ix] - ptdf.data[to_bus_ix, line_arc_ix]
+end
+
+"""
+    add_branch_investment_variables!(decision_model, candidate_lines, T) -> variable container
+
+Add one binary investment variable `z_k ∈ {0,1}` per entry in `candidate_lines` to the PSI
+container and the underlying JuMP model, keyed by component type `T`.  Returns the variable
+container indexed by candidate line name.
+"""
+function add_branch_investment_variables!(decision_model, candidate_lines, T)
+    container  = decision_model.internal.container
+    jump_model = PSI.get_jump_model(container)
+    names      = get_name.(candidate_lines)
+
+    variable = PSI.add_variable_container!(
+        container,
+        BranchInvestmentVariable(),
+        T,
+        names,
+    )
+
+    for name in names
+        variable[name] = JuMP.@variable(
+            jump_model,
+            binary    = true,
+            base_name = "BranchInvestment_$(T)_{$name}",
+        )
+    end
+    return variable
+end
+
+"""
+    add_branch_cancelling_flow_variables!(decision_model, candidate_lines, T) -> variable container
+
+Add a continuous flow-cancelling variable `v_k[t]` per candidate line and time step to the
+PSI container, keyed by component type `T`.  `v_k[t] ≈ z_k · FlowVar[k,t]` (enforced via
+big-M constraints).  Returns the variable container indexed by `(candidate_line_name, t)`.
+"""
+function add_branch_cancelling_flow_variables!(decision_model, candidate_lines, T)
+    container  = decision_model.internal.container
+    jump_model = PSI.get_jump_model(container)
+    names      = get_name.(candidate_lines)
+    time_steps = PSI.get_time_steps(container)
+
+    variable = PSI.add_variable_container!(
+        container,
+        BranchCancellingFlowVariable(),
+        T,
+        names,
+        time_steps,
+    )
+
+    for name in names, t in time_steps
+        variable[name, t] = JuMP.@variable(
+            jump_model,
+            base_name = "BranchCancellingFlow_$(T)_{$name, $t}",
+        )
+    end
+    return variable
+end
+
+"""
+    add_bigM_linking_constraints!(decision_model, candidate_lines, T, z_var, v_var)
+
+Add big-M constraints linking the flow-cancelling variable `v_k[t]` to the binary investment
+variable `z_k`, keyed by component type `T`:
+
+    v_k[t] ≤  M · (1 − z_k)
+    v_k[t] ≥ −M · (1 − z_k)
+
+where M = `M_max` (global constant).  When `z_k = 1` (line built) `v_k` is forced to zero;
+when `z_k = 0` (line not built) `v_k` is free within ±M.
+"""
+function add_bigM_linking_constraints!(decision_model, candidate_lines, T, z_var, v_var)
+    container  = decision_model.internal.container
+    jump_model = PSI.get_jump_model(container)
+    time_steps = PSI.get_time_steps(container)
+
+    constraint_ub =
+        PSI.add_constraints_container!(
+            container,
+            BigMConstraint(),
+            T,
+            get_name.(candidate_lines),
+            time_steps;
+            meta = "ub"
+        )
+    constraint_lb =
+        PSI.add_constraints_container!(
+            container,
+            BigMConstraint(),
+            T,
+            get_name.(candidate_lines),
+            time_steps;
+            meta = "lb"
+        )
+
+    for line in candidate_lines
+        name = get_name(line)
+        #Big_M    = get_rating(line)
+        Big_M = M_max
+        for t in time_steps
+            constraint_ub[name, t] = JuMP.@constraint(jump_model, v_var[name, t] <= Big_M * (1 - z_var[name]))
+            constraint_lb[name, t] = JuMP.@constraint(jump_model, v_var[name, t] >= -Big_M * (1 - z_var[name]))
+        end
+    end
+    return
+end
+
+"""
+    add_shift_terms_to_existing_line_constraints!(
+        decision_model, existing_lines, T, candidate_lines, v_var, ptdf, sys)
+
+For each existing (non-candidate) branch in `existing_lines` (type `T`) and each candidate
+line `k`, append `Δ_{l,k} · v_k[t]` to the `FlowRateConstraint` upper and lower bounds
+(eq. 3).  `Δ_{l,k} = PTDF[from_k, l] − PTDF[to_k, l]` is computed from `ptdf` and `sys`.
+"""
+function add_shift_terms_to_existing_line_constraints!(
+    decision_model,
+    existing_lines,
+    T,
+    candidate_lines,
+    v_var,
+    ptdf,
+    sys,
+)
+    container  = decision_model.internal.container
+    time_steps = PSI.get_time_steps(container)
+    ub_con = PSI.get_constraint(container, FlowRateConstraint(), T, "ub")
+    lb_con = PSI.get_constraint(container, FlowRateConstraint(), T, "lb")
+
+    for line in existing_lines
+        l_name = get_name(line)
+        for candidate in candidate_lines
+            k_name   = get_name(candidate)
+            arc_k    = get_arc(candidate)
+            from_num = get_number(get_from(arc_k))
+            to_num   = get_number(get_to(arc_k))
+
+            shift = _get_ptdf_shift_term(ptdf, sys, l_name, from_num, to_num)
+
+            for t in time_steps
+                # UB: add  shift · v_k[t]
+                set_normalized_coefficient(ub_con[l_name, t], v_var[k_name, t], shift)
+                # LB: add shift · v_k[t]
+                set_normalized_coefficient(lb_con[l_name, t], v_var[k_name, t], shift)
+            end
+        end
+    end
+end
+
+"""
+    add_shift_terms_to_candidate_line_constraints!(
+        decision_model, sys, candidate_lines, T, z_var, v_var, ptdf)
+
+Modify the `FlowRateConstraint` bounds for each candidate line to implement eq. (18):
+
+    UB:  FlowVar[k,t] − rating_k · z_k + (Δ_{k,k} − 1) · v_k[t] + Σ_{j≠k} Δ_{k,j} · v_j[t] ≤ 0
+    LB: −FlowVar[k,t] − rating_k · z_k − (Δ_{k,k} − 1) · v_k[t] − Σ_{j≠k} Δ_{k,j} · v_j[t] ≤ 0
+
+The RHS is shifted from ±rating_k to 0.  `z_k = 0` forces `FlowVar[k,t] = 0`;
+`z_k = 1` restores a ±rating_k feasible range via the `v_k` cancellation.
+"""
+function add_shift_terms_to_candidate_line_constraints!(
+    decision_model,
+    sys,
+    candidate_lines,
+    T,
+    z_var,
+    v_var,
+    ptdf,
+)
+    container  = decision_model.internal.container
+    time_steps = PSI.get_time_steps(container)
+    ub_con = PSI.get_constraint(container, FlowRateConstraint(), T, "ub")
+    lb_con = PSI.get_constraint(container, FlowRateConstraint(), T, "lb")
+
+    for line in candidate_lines
+        k_name   = get_name(line)
+        arc_k    = get_arc(line)
+        k_from   = get_number(get_from(arc_k))
+        k_to     = get_number(get_to(arc_k))
+        rating_k = get_rating(line)
+
+        # Self shift: Δ_{k,k} = H_{k, from_k} - H_{k, to_k}
+        self_shift = _get_ptdf_shift_term(ptdf, sys, k_name, k_from, k_to)
+
+        for t in time_steps
+            ub = ub_con[k_name, t]
+            lb = lb_con[k_name, t]
+
+            # --- modify RHS: from ±rating_k to 0 ---
+            ub_rhs = normalized_rhs(ub)
+            set_normalized_rhs(ub, ub_rhs - rating_k)
+            lb_rhs = normalized_rhs(lb)
+            set_normalized_rhs(lb, lb_rhs + rating_k)
+
+            # --- binary variable with coefficient -rating_k ---
+            set_normalized_coefficient(ub, z_var[k_name], -rating_k)
+            set_normalized_coefficient(lb, z_var[k_name], rating_k)
+
+            # --- self flow-cancelling variable: (Δ_{k,k} - 1) for UB, -(Δ_{k,k}-1) for LB ---
+            set_normalized_coefficient(ub, v_var[k_name, t],  (self_shift - 1.0))
+            set_normalized_coefficient(lb, v_var[k_name, t], (self_shift - 1.0))
+
+            # --- cross-shift terms from other candidate lines ---
+            for other in candidate_lines
+                kk_name = get_name(other)
+                kk_name == k_name && continue
+
+                arc_kk    = get_arc(other)
+                kk_from   = get_number(get_from(arc_kk))
+                kk_to     = get_number(get_to(arc_kk))
+                cross_shift = _get_ptdf_shift_term(ptdf, sys, k_name, kk_from, kk_to)
+
+                set_normalized_coefficient(ub, v_var[kk_name, t], cross_shift)
+                set_normalized_coefficient(lb, v_var[kk_name, t], cross_shift)
+            end
+        end
+    end
+end
+
+# ---------------------------------------------------------------------------
+# Investment cost and generation investment constraints
+# ---------------------------------------------------------------------------
+
+struct GenerationInvestmentConstraint <: PSI.ConstraintType end
+
+"""
+    add_candidate_line_investment_costs!(decision_model, z_var)
+
+For every candidate line (those whose name contains `"candidate"`), add
+`project_cost * z_k` to the objective function, where `project_cost` is
+read from `get_ext(line)["project_cost"]` (defaults to 0 if absent).
+
+`z_var` is the binary-variable container returned by
+`add_flow_canceling_terms!`.
+"""
+function add_candidate_line_investment_costs!(decision_model, z_var)
+    sys        = PSI.get_system(decision_model)
+    container  = decision_model.internal.container
+    jump_model = PSI.get_jump_model(container)
+
+    candidate_lines = filter(
+        l -> occursin("candidate", get_name(l)),
+        collect(get_components(PSY.Line, sys)),
+    )
+
+    obj = objective_function(jump_model)
+    for line in candidate_lines
+        name = get_name(line)
+        cost = get(get_ext(line), "project_cost", 0.0)
+        JuMP.add_to_expression!(obj, cost, z_var[name])
+    end
+    set_objective_function(jump_model, obj)
+    return
+end
+
+"""
+    add_candidate_generation_investment_constraints!(decision_model, T) -> variable container
+
+For every component of type `T` whose `ext` dict contains `"is_candidate" => true`:
+
+1. Adds a binary investment variable `x_g ∈ {0,1}` (`GenerationInvestmentVariable`).
+2. Adds `ActivePowerVariable[g,t] ≤ p_max_g · x_g` for all time steps
+   (`GenerationInvestmentConstraint`).
+3. Adds `project_cost · x_g` to the objective (`get_ext(gen)["project_cost"]`,
+   defaults to 0 if absent).
+
+Returns the variable container indexed by generator name, or `nothing` if no candidates.
+"""
+function add_candidate_generation_investment_constraints!(decision_model, T)
+    container  = decision_model.internal.container
+    jump_model = PSI.get_jump_model(container)
+    time_steps = PSI.get_time_steps(container)
+    sys        = PSI.get_system(decision_model)
+
+    candidate_gens = filter(
+        g -> get(get_ext(g), "is_candidate", false),
+        collect(get_components(T, sys)),
+    )
+    isempty(candidate_gens) && return nothing
+
+    names = get_name.(candidate_gens)
+
+    # Binary investment variable x_g ∈ {0,1}
+    x_var = PSI.add_variable_container!(
+        container,
+        GenerationInvestmentVariable(),
+        T,
+        names,
+    )
+    for name in names
+        x_var[name] = JuMP.@variable(
+            jump_model,
+            binary    = true,
+            base_name = "GenerationInvestment_$(T)_{$name}",
+        )
+    end
+
+    # Constraint: p_g[t] ≤ p_max_g * x_g
+    p_var = PSI.get_variable(container, ActivePowerVariable(), T)
+    con = PSI.add_constraints_container!(
+        container,
+        GenerationInvestmentConstraint(),
+        T,
+        names,
+        time_steps,
+    )
+    for gen in candidate_gens
+        name  = get_name(gen)
+        p_max = PSY.get_max_active_power(gen)
+        for t in time_steps
+            con[name, t] = JuMP.@constraint(
+                jump_model,
+                p_var[name, t] <= p_max * x_var[name],
+                base_name = "GenerationInvestmentConstraint_$(T)_{$name, $t}",
+            )
+        end
+    end
+
+    # Add project_cost * x_g to the objective
+    obj = objective_function(jump_model)
+    for gen in candidate_gens
+        name = get_name(gen)
+        cost = get(get_ext(gen), "project_cost", 0.0)
+        JuMP.add_to_expression!(obj, cost, x_var[name])
+    end
+    set_objective_function(jump_model, obj)
+
+    return x_var
+end
+
+
+"""
+    build_model_with_flow_canceling_terms(sys) -> DecisionModel
+
+Convenience function that builds a complete PTDF model with all flow-cancelling and
+investment terms applied in one call.  Internally it:
+
+1. Builds the base PTDF `DecisionModel` via `build!`.
+2. Adds binary branch investment variables and flow-cancelling variables for every
+   line whose name contains `"candidate"`.
+3. Adds big-M linking constraints.
+4. Adds PTDF shift terms to existing-line and candidate-line `FlowRateConstraint` bounds.
+5. Adds line investment costs and candidate generation investment constraints to the
+   objective.
+"""
+function build_model_with_flow_canceling_terms(sys)
+    ptdf = PTDF(sys)
+    all_lines       = collect(get_components(PSY.Line, sys))
+    candidate_lines = filter(l -> occursin("candidate", get_name(l)), all_lines)
+    existing_lines  = filter(l -> !occursin("candidate", get_name(l)), all_lines)
+
+    template = ProblemTemplate(NetworkModel(PTDFPowerModel; use_slacks = true))
+    set_device_model!(template, ThermalStandard, ThermalDispatchNoMin)
+    set_device_model!(template, Line, StaticBranch)
+    set_device_model!(template, PhaseShiftingTransformer, StaticBranch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+
+    model = DecisionModel(
+        template,
+        sys;
+        optimizer = Xpress.Optimizer,
+        name = "UC",
+        store_variable_names=true,
+    )
+
+    build!(model; output_dir = mktempdir())
+
+    candidate_lines = get_components(x -> contains(x.name, "candidate"), Line, sys)
+    z_var = add_branch_investment_variables!(model, candidate_lines, Line)
+    v_var = add_branch_cancelling_flow_variables!(model, candidate_lines, Line)
+    add_bigM_linking_constraints!(model, candidate_lines, Line, z_var, v_var)
+
+    existing_lines = get_components(get_available,Line, sys)
+    add_shift_terms_to_existing_line_constraints!(
+        model,
+        existing_lines,
+        Line,
+        candidate_lines,
+        v_var,
+        ptdf,
+        sys,
+    )
+    existing_xfrm = get_components(get_available, PhaseShiftingTransformer, sys)
+    add_shift_terms_to_existing_line_constraints!(
+        model,
+        existing_xfrm,
+        PhaseShiftingTransformer,
+        candidate_lines,
+        v_var,
+        ptdf,
+        sys,
+    )
+
+    add_shift_terms_to_candidate_line_constraints!(
+        model,
+        sys,
+        candidate_lines,
+        Line,
+        z_var,
+        v_var,
+        ptdf,
+    )
+
+    add_candidate_line_investment_costs!(model, z_var)
+
+    add_candidate_generation_investment_constraints!(model, ThermalStandard)
+
+    return model
+end
