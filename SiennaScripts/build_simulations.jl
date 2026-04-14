@@ -332,6 +332,7 @@ function build_uc_ed_simulation_with_acopf(
     ed_optimizer = DEFAULT_NLP_OPTIMIZER,
     ptdf_uc = nothing,
     ptdf_ed = nothing,
+    initial_time = DateTime("2019-01-01T00:00:00"),
 )
     # Use provided PTDF matrices or compute them if not provided
     if isnothing(ptdf_uc)
@@ -398,6 +399,7 @@ function build_uc_ed_simulation_with_acopf(
         models = models,
         sequence = sequence,
         simulation_folder = mktempdir(),  # Temporary directory for outputs
+        initial_time = initial_time,
     )
 
     # Build the simulation (construct JuMP models and constraints)
@@ -647,6 +649,10 @@ function build_uc_double_ed_simulation_with_acopf_and_uc_linear_ed_quadratic_los
     # This ensures branch flow limits account for the additional loading from losses
     # by distributing losses to buses and propagating via PTDF
     # update_transmission_constraints_with_losses!(uc_model, res_old_uc, sys_uc, ptdf_uc_used)
+
+    #####################
+    ##### ED update #####
+    #####################
 
     return sim
 end

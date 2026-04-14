@@ -826,7 +826,7 @@ function build_ptdf_model_with_quadratic_losses(
 
     # Step 3: Update transmission constraints with fictitious nodal demands
     # Ensures branch flows reflect the additional loading from losses
-    update_transmission_constraints_with_losses!(model, res_old, sys, ptdf)
+    # update_transmission_constraints_with_losses!(model, res_old, sys, ptdf)
 
     return model
 end
