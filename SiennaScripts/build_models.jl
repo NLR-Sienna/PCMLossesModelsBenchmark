@@ -513,6 +513,90 @@ function add_current_loss_constraint_quadratic_approximation!(model, sys, ptdf, 
 end
 
 """
+    add_current_loss_constraint_quadratic_approximation_no_voltage!(
+        model, 
+        sys, 
+        ptdf, 
+    )
+
+Add quadratic loss approximation constraints to the optimization model.
+
+# Arguments
+- `model`: The decision model to modify
+- `sys`: PowerSystems.jl System object containing network data
+- `ptdf`: PTDF matrix for the system
+
+# Details
+Creates quadratic constraints linking total system losses to bus injections:
+
+    loss_variable[t] = -Σₖ Rₖ × (Σⱼ PTDFₖⱼ × Injectionⱼ,ₜ)²
+
+where:
+- Rₖ = resistance of branch k
+- PTDFₖⱼ = power transfer distribution factor
+- Injectionⱼ,ₜ = net injection at bus j (decision variable)
+
+**Formulation:**
+This represents P = I²R losses where:
+- Branch currents are approximated using PTDF and injections
+- Voltage magnitudes are fixed from the previous AC power flow solution
+- Results in a quadratic expression suitable for NLP solvers
+
+**Advantages over linear:**
+- More physically accurate loss representation
+- Captures nonlinear relationship between power flow and losses
+- Better suited for economic dispatch with fixed commitments
+"""
+function add_current_loss_constraint_quadratic_approximation_no_voltage!(model, sys, ptdf)
+    container = model.internal.container
+    time_steps = PSI.get_time_steps(container)
+    arcs_length = length(axes(ptdf, 2))
+
+    # Retrieve the total loss variable
+    loss_variable = PSI.get_variable(container, LineLossTotalApproximation(), PSY.System)
+    ref_buses = axes(loss_variable, 1)
+
+    # Create constraint container for loss approximation
+    constraint = PSI.add_constraints_container!(
+        container,
+        LineLossConstraintApproximation(),
+        PSY.System,
+        ref_buses,
+        time_steps,
+    )
+
+    # Extract branch resistance values from system data
+    R, _ = get_RX_vector(sys, ptdf)
+
+    # Get current iteration's injection expression (decision variables)
+    injection = container.expressions[InfrastructureSystems.Optimization.ExpressionKey{
+        ActivePowerBalance,
+        ACBus,
+    }(
+        "",
+    )]
+    bus_ax = axes(injection, 1)
+    bus_length = length(bus_ax)
+
+    # Create quadratic loss constraint for each time period
+    # Loss = Σ_branches R × (flow)² where flow is computed via PTDF
+    for ref_bus in ref_buses, t in time_steps
+        constraint[ref_bus, t] = JuMP.@constraint(
+            PSI.get_jump_model(container),
+            # Negative sign because losses reduce available power
+            loss_variable[ref_bus, t] ==
+            -sum(
+                R[k] *
+                (sum(
+                    ptdf[k, j] * injection[bus_ax[j], t]
+                    for j in 1:bus_length
+                ))^2 for k in 1:arcs_length
+            )
+        )
+    end
+end
+
+"""
     update_copperplate_loss_approximation!(
         model::PSI.DecisionModel, 
         loss_factors, 

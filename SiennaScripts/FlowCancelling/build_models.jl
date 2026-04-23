@@ -557,3 +557,157 @@ function build_model_with_flow_canceling_terms(sys)
 
     return model
 end
+
+# ---------------------------------------------------------------------------
+# Quadratic loss approximation helpers (self-contained, no voltage scaling)
+# ---------------------------------------------------------------------------
+
+"""Variable type for total approximated line losses."""
+struct LineLossTotalApproximation <: PSI.VariableType end
+
+"""Constraint type linking bus injections to quadratic losses."""
+struct LineLossConstraintApproximation <: PSI.ConstraintType end
+
+"""
+Add continuous loss variables to the model, one per reference bus per time step.
+"""
+function _fc_add_loss_variables!(model::PSI.DecisionModel)
+    container = model.internal.container
+    time_steps = PSI.get_time_steps(container)
+    con_bal = PSI.get_constraint(container, CopperPlateBalanceConstraint(), PSY.System)
+    ref_buses = axes(con_bal, 1)
+
+    variable = PSI.add_variable_container!(
+        container,
+        LineLossTotalApproximation(),
+        PSY.System,
+        ref_buses,
+        time_steps,
+    )
+    for ref_bus in ref_buses, t in time_steps
+        variable[ref_bus, t] = JuMP.@variable(
+            PSI.get_jump_model(container),
+            base_name = "LineLossTotalApproximation_{$ref_bus}_{$t}"
+        )
+    end
+    return variable
+end
+
+"""
+Add the loss variable to the copper plate balance (quadratic variant: RHS stays zero).
+"""
+function _fc_add_loss_to_copperplate_balance!(model::PSI.DecisionModel, loss_variable)
+    container = model.internal.container
+    time_steps = PSI.get_time_steps(container)
+    con_bal = PSI.get_constraint(container, CopperPlateBalanceConstraint(), PSY.System)
+    ref_buses = axes(con_bal, 1)
+    ref_bus = only(ref_buses)
+    for t in time_steps
+        set_normalized_coefficient(con_bal[ref_bus, t], loss_variable[ref_bus, t], 1)
+    end
+end
+
+"""
+Add quadratic loss constraints: loss = -Σₖ Rₖ·(Σⱼ PTDFₖⱼ · injectionⱼ)²
+
+No voltage scaling is applied — suitable when a flat voltage profile is assumed.
+"""
+function _fc_add_quadratic_loss_constraints!(model, sys, ptdf)
+    container = model.internal.container
+    time_steps = PSI.get_time_steps(container)
+    arcs_length = length(axes(ptdf, 2))
+
+    loss_variable = PSI.get_variable(container, LineLossTotalApproximation(), PSY.System)
+    ref_buses = axes(loss_variable, 1)
+
+    constraint = PSI.add_constraints_container!(
+        container,
+        LineLossConstraintApproximation(),
+        PSY.System,
+        ref_buses,
+        time_steps,
+    )
+
+    R, _ = get_RX_vector(sys, ptdf)
+
+    injection = container.expressions[InfrastructureSystems.Optimization.ExpressionKey{
+        ActivePowerBalance,
+        ACBus,
+    }("")]
+    bus_ax = axes(injection, 1)
+    bus_length = length(bus_ax)
+
+    for ref_bus in ref_buses, t in time_steps
+        constraint[ref_bus, t] = JuMP.@constraint(
+            PSI.get_jump_model(container),
+            loss_variable[ref_bus, t] ==
+            -sum(
+                R[k] * (sum(ptdf[k, j] * injection[bus_ax[j], t] for j in 1:bus_length))^2
+                for k in 1:arcs_length
+            )
+        )
+    end
+end
+
+"""
+    build_model_with_flow_canceling_and_quadratic_losses(sys) -> DecisionModel
+
+Build a PTDF investment model with flow-cancelling constraints **and** a quadratic
+PTDF-based transmission loss approximation (no voltage scaling).
+
+This extends `build_model_with_flow_canceling_terms` by adding:
+- A loss variable per reference bus per time step.
+- The loss variable to the copper plate balance (G - D + loss = 0).
+- A quadratic constraint: loss = -Σₖ Rₖ·(Σⱼ PTDFₖⱼ·Pⱼ)²
+
+Requires an NLP-capable solver (e.g. Ipopt) because of the quadratic constraints.
+"""
+function build_model_with_flow_canceling_and_quadratic_losses(
+    sys;
+    optimizer = optimizer_with_attributes(Ipopt.Optimizer),
+)
+    ptdf = PTDF(sys)
+
+    template = ProblemTemplate(NetworkModel(PTDFPowerModel; use_slacks = true))
+    set_device_model!(template, ThermalStandard, ThermalDispatchNoMin)
+    set_device_model!(template, Line, StaticBranch)
+    set_device_model!(template, PhaseShiftingTransformer, StaticBranch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+
+    model = DecisionModel(
+        template,
+        sys;
+        optimizer = optimizer,
+        name = "UC_QuadLoss",
+        store_variable_names = true,
+    )
+
+    build!(model; output_dir = mktempdir())
+
+    # --- Flow-cancelling terms (same as build_model_with_flow_canceling_terms) ---
+    candidate_lines = get_components(x -> contains(x.name, "candidate"), Line, sys)
+    z_var = add_branch_investment_variables!(model, candidate_lines, Line)
+    v_var = add_branch_cancelling_flow_variables!(model, candidate_lines, Line)
+    add_bigM_linking_constraints!(model, candidate_lines, Line, z_var, v_var)
+
+    existing_lines = get_components(get_available, Line, sys)
+    add_shift_terms_to_existing_line_constraints!(
+        model, existing_lines, Line, candidate_lines, v_var, ptdf, sys,
+    )
+    existing_xfrm = get_components(get_available, PhaseShiftingTransformer, sys)
+    add_shift_terms_to_existing_line_constraints!(
+        model, existing_xfrm, PhaseShiftingTransformer, candidate_lines, v_var, ptdf, sys,
+    )
+    add_shift_terms_to_candidate_line_constraints!(
+        model, sys, candidate_lines, Line, z_var, v_var, ptdf,
+    )
+    add_candidate_line_investment_costs!(model, z_var)
+    add_candidate_generation_investment_constraints!(model, ThermalStandard)
+
+    # --- Quadratic loss approximation ---
+    loss_var = _fc_add_loss_variables!(model)
+    _fc_add_loss_to_copperplate_balance!(model, loss_var)
+    _fc_add_quadratic_loss_constraints!(model, sys, ptdf)
+
+    return model
+end
