@@ -15,7 +15,7 @@ import PowerNetworkMatrices
 
 include("Systems/5bus/build_5bus.jl")
 include("SiennaScripts/FlowCancelling/build_models.jl")
-
+include("SiennaScripts/utils.jl")
 
 sys = build_matpower_5bus_with_updated_lines()
 transform_single_time_series!(sys, Hour(2), Hour(2))
@@ -34,3 +34,12 @@ res = OptimizationProblemResults(model)
 obj_fun = JuMP.objective_function(model.internal.container.JuMPmodel)
 inv_g = read_variable(res, PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}(""))
 inv_l = read_variable(res, PSI.VariableKey{BranchInvestmentVariable, Line}(""))
+
+# Build and solve the same model enhanced with quadratic PTDF loss approximation
+model_quad = build_model_with_flow_canceling_and_quadratic_losses(sys)
+solve!(model_quad)
+
+res_quad = OptimizationProblemResults(model_quad)
+obj_fun_quad = JuMP.objective_function(model_quad.internal.container.JuMPmodel)
+inv_g_quad = read_variable(res_quad, PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}(""))
+inv_l_quad = read_variable(res_quad, PSI.VariableKey{BranchInvestmentVariable, Line}(""))
