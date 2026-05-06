@@ -54,9 +54,11 @@ using PowerNetworkMatrices
 using HydroPowerSimulations
 using InfrastructureSystems
 using JuMP
+using LinearAlgebra
 using HiGHS
 using Ipopt
 using Dates
+using Xpress
 using Logging
 
 import PowerSystems as PSY
@@ -69,21 +71,23 @@ include("SiennaScripts/build_models.jl")   # loss approximation builders
 include("SiennaScripts/utils.jl")          # post-processing helpers (loss factors, FND, …)
 include("SiennaScripts/run_models.jl")     # iterative solve loops
 
-include("Systems/5bus/build_5bus.jl")                      # 5-bus test-case helpers
-include("SiennaScripts/FlowCancelling/build_models.jl")    # flow-cancelling builders
-
 # =============================================================================
 # PART 1 – LOSSLESS BASELINE (standard PSI PTDF model)
 # =============================================================================
 # We start with the standard PowerSimulations PTDF-based unit commitment.
 # No losses, no new variables – just the textbook formulation as PSI builds it.
+# We use RTS but modify it a little bit to get cleaner results with losses models later.
 
-sys_uc = PSB.build_system(PSITestSystems, "c_sys5_uc";
-    skip_serialization = true,
-    add_single_time_series = true,
-)
+sys_uc = PSB.build_system(PSISystems, "modified_RTS_GMLC_DA_sys_noForecast"; skip_serialization=true)
+hy_dispatch = first(get_components(HydroDispatch, sys_uc))
+for ren in get_components(RenewableDispatch, sys_uc)
+    set_operation_cost!(ren, RenewableGenerationCost(CostCurve(LinearCurve(rand(), 0.0))))
+end
+set_operation_cost!(hy_dispatch, HydroGenerationCost(CostCurve(LinearCurve(15.0)), 0.0))
+
 set_available!(get_component(TwoTerminalGenericHVDCLine, sys_uc, "DC1"), false)
-transform_single_time_series!(sys_uc, Hour(1), Hour(1))
+set_name!(sys_uc, get_component(TwoTerminalGenericHVDCLine, sys_uc, "DC1"), "DC_1")
+transform_single_time_series!(sys_uc, Hour(2), Hour(2))
 
 # ──► build_ptdf_model_without_losses  [SiennaScripts/build_models.jl:201-217]
 #
@@ -103,6 +107,24 @@ transform_single_time_series!(sys_uc, Hour(1), Hour(1))
 #   where flow[k,t] = Σ_i PTDF[k,i] * injection[i,t]
 model_lossless = build_ptdf_model_without_losses(sys_uc)
 
+# By default it will use DEFAULT_UC_MODELS
+DEFAULT_UC_MODELS
+
+# You can specify different device models by passing a custom dict:
+custom_uc_models = Dict(
+    Line => StaticBranchBounds,
+    TapTransformer => StaticBranchBounds,
+    ThermalStandard => ThermalBasicUnitCommitment,
+    PowerLoad => StaticPowerLoad,
+    RenewableDispatch => RenewableFullDispatch,
+    HydroDispatch => HydroDispatchRunOfRiver,
+)
+
+model_lossless = build_ptdf_model_without_losses(
+    sys_uc;
+    device_models = custom_uc_models,
+)
+
 solve!(model_lossless)
 res_lossless = OptimizationProblemResults(model_lossless)
 
@@ -115,7 +137,7 @@ println("Objective: ", res_lossless.optimizer_stats[1, "objective_value"])
 #   read_aux_variable(res_lossless, "PowerFlowBranchActivePowerFromTo__Line")  – branch MW
 #
 # These are the raw inputs for all loss-approximation methods below.
-
+read_aux_variable(res_lossless, "PowerFlowVoltageMagnitude__ACBus"; table_format = TableFormat.WIDE)
 # =============================================================================
 # PART 2 – ITERATIVE LINEAR LOSS APPROXIMATION
 # =============================================================================
@@ -125,6 +147,8 @@ println("Objective: ", res_lossless.optimizer_stats[1, "objective_value"])
 # The linear approach replaces the nonlinear loss with a first-order Taylor
 # expansion around the previous operating point, then re-solves.  Repeating
 # this until the dispatch stops changing gives a converged estimate.
+
+res_linear = run_iterative_linear_loss_model(sys_uc; max_iter = 10, error_tol = 1e-3)
 
 # ──► run_iterative_linear_loss_model  [SiennaScripts/run_models.jl:170-226]
 #
@@ -181,73 +205,129 @@ println("=== Iterative linear loss model converged ===")
 println("Objective: ", res_linear.optimizer_stats[1, "objective_value"])
 
 # =============================================================================
-# PART 3 – QUADRATIC LOSS APPROXIMATION (single-shot, NLP)
+# PART 3 – QUADRATIC LOSS APPROXIMATION (Simulation with UC+ED, NLP)
 # =============================================================================
-# Instead of linearizing, model losses as P_loss = Σ_k R_k * (PTDF_k * P)²
-# This is physically accurate (Ohm's law) but produces a quadratic program
-# requiring an NLP solver (Ipopt).  Typically used for Economic Dispatch where
-# unit commitments are already fixed.
+# A two-stage UC–ED simulation where losses are approximated with a hybrid
+# strategy: the UC stage uses a linear (MILP-compatible) loss approximation
+# so binary commitment decisions remain tractable, while the ED stage uses an
+# accurate quadratic P = I²R formulation (requiring Ipopt) once commitments
+# are fixed.  Both stages are updated iteratively until the total ED losses
+# converge.
 
-# ──► build_ptdf_model_with_quadratic_losses  [build_models.jl:895-916]
-#
-# Differences from the linear version:
-#
-#   STEP C2 is replaced by add_quadratic_current_loss_to_copperplate_balance!
-#     [build_models.jl:340-359]
-#     set_normalized_coefficient(CopperPlateBalanceConstraint[t], loss_var[t], 1)
-#     (RHS is NOT shifted – it stays 0.  The quadratic constraint below
-#      defines the loss variable's value instead of a fixed estimate.)
-#     After: Σ injection[i,t] + loss_var[t] = 0
-#
-#   STEP C3 is replaced by add_current_loss_constraint_quadratic_approximation!
-#     [build_models.jl:462-513]
-#     Adds quadratic constraint (LineLossConstraintApproximation):
-#     loss_var[t] = -Σ_k R[k] * (Σ_j V_line[k,t]/V_bus[j,t] * PTDF[k,j] * inj[j,t])²
-#     where:
-#       R[k]          = series resistance of branch k  (get_RX_vector, utils.jl:274-286)
-#       V_line[k,t]   = max voltage at branch k endpoints  (utils.jl:242-254)
-#       V_bus[j,t]    = bus voltage magnitude from prior AC PF  (utils.jl:201-209)
-#       PTDF[k,j]     = power transfer distribution factor
-#     Negative sign: losses consume power → reduce net injection available
-#
-# Note: STEP D (FND correction to branch constraints) is present in the code
-# but commented out in this function because the quadratic constraint already
-# captures the loss effect directly in the balance.
+include("SiennaScripts/build_simulations.jl")   # loss approximation builders for simulations
+include("SiennaScripts/run_simulations.jl")     # iterative solve loops
 
-model_quad = build_ptdf_model_with_quadratic_losses(
-    sys_uc,
-    res_lossless;                          # previous result for voltage magnitudes
-    device_models = DEFAULT_ED_MODELS,    # ED formulation (no commitment variables)
-    optimizer = optimizer_with_attributes(Ipopt.Optimizer),
+UC_MODELS = Dict(
+    Line => StaticBranchBounds,
+    TapTransformer => StaticBranchBounds,
+    ThermalStandard => ThermalBasicUnitCommitment,
+    PowerLoad => StaticPowerLoad,
+    RenewableDispatch => RenewableFullDispatch,
+    HydroDispatch => HydroDispatchRunOfRiver,
 )
-solve!(model_quad)
-res_quad = OptimizationProblemResults(model_quad)
+ED_MODELS = Dict(
+    Line => StaticBranchBounds,
+    TapTransformer => StaticBranchBounds,
+    ThermalStandard => ThermalBasicDispatch,
+    PowerLoad => StaticPowerLoad,
+    RenewableDispatch => RenewableFullDispatch,
+    HydroDispatch => HydroDispatchRunOfRiver,
+)
+
+sim_res = run_iterative_uc_ed_quadratic_loss_simulation(
+    sys_uc,
+    sys_uc,
+    uc_models = UC_MODELS,
+    ed_models = ED_MODELS,
+    uc_optimizer = optimizer_with_attributes(Xpress.Optimizer),
+    ed_optimizer = optimizer_with_attributes(Ipopt.Optimizer),
+)
+
+# ──► run_iterative_uc_ed_quadratic_loss_simulation  [run_simulations.jl:394]
+#
+# Algorithm:
+#   iter 0:  run_uc_ed_lossless_simulation               [run_simulations.jl:40]
+#              builds a two-stage UC-ED Simulation via
+#              build_uc_ed_simulation_with_no_losses      [build_simulations.jl:63]
+#              → standard PTDF (lossless) for both UC and ED stages, with a
+#                SemiContinuousFeedforward passing OnVariable (UC) to
+#                ActivePowerVariable (ED)
+#
+#   iter k:  run_uc_ed_quadratic_loss_simulation         [run_simulations.jl:234]
+#              builds via
+#              build_uc_ed_simulation_with_uc_linear_ed_quadratic_losses
+#                                                        [build_simulations.jl:234]
+#              stop when |sum(ED_losses_new) - sum(ED_losses_old)| < error_tol
+#
+# build_uc_ed_simulation_with_uc_linear_ed_quadratic_losses does:
+#
+#   STEP 1 – build_uc_ed_simulation_with_no_losses       [build_simulations.jl:63]
+#     Creates the two-stage Simulation skeleton (UC model + ED model +
+#     SemiContinuousFeedforward) identical to Part 2's baseline.
+#
+#   UC STAGE – Linear loss approximation (MILP-compatible)
+#   ──────────────────────────────────────────────────────
+#   STEP 2 – update_copperplate_loss_approximation!(uc_model, …)  [build_models.jl:620]
+#     Same three sub-steps as Part 2 (C1–C3):
+#       C1. add_current_loss_variables!                  [build_models.jl:234]
+#       C2. add_current_loss_to_copperplate_balance!     [build_models.jl:286]
+#       C3. add_current_loss_constraint_approximation!   [build_models.jl:383]
+#     → linear Taylor-expansion loss constraint on UC copper-plate balance
+#
+#   STEP 3 – update_transmission_constraints_with_losses!(uc_model, …) [build_models.jl:722]
+#     FND adjustment to UC branch flow bounds (same as Part 2 STEP D)
+#
+#   ED STAGE – Quadratic loss approximation (NLP, commitments fixed by UC)
+#   ────────────────────────────────────────────────────────────────────────
+#   STEP 4 – update_copperplate_quadratic_loss_approximation!(ed_model, …) [build_models.jl:671]
+#     Three sub-steps:
+#       C1. add_current_loss_variables!                              [build_models.jl:234]
+#       C2. add_quadratic_current_loss_to_copperplate_balance!       [build_models.jl:340]
+#             RHS stays 0; loss_var[t] free to be set by the quadratic constraint
+#             After: Σ injection[i,t] + loss_var[t] = 0
+#       C3. add_current_loss_constraint_quadratic_approximation!     [build_models.jl:462]
+#             loss_var[t] = -Σ_k R[k] * (Σ_j V_line[k,t]/V_bus[j,t] * PTDF[k,j] * inj[j,t])²
+#             where:
+#               R[k]        = series resistance  (get_RX_vector, utils.jl:274)
+#               V_line[k,t] = max voltage at branch k endpoints  (utils.jl:242)
+#               V_bus[j,t]  = bus voltage magnitude from prior AC PF  (utils.jl:201)
+#             Negative sign: losses consume power → reduce net injection
+#
+#   STEP 5 – update_transmission_constraints_with_losses!(ed_model, …) [build_models.jl:722]
+#     FND adjustment to ED branch flow bounds
+
+uc_results = get_decision_problem_results(sim_res, "UC")
+ed_results = get_decision_problem_results(sim_res, "ED")
 
 println("=== Quadratic loss model solved ===")
-println("Objective: ", res_quad.optimizer_stats[1, "objective_value"])
+println("Objective: ", read_optimizer_stats(ed_results)[1, "objective_value"])
 
-# Inspect the new variable and constraint added to the JuMP model:
-#   model_quad.internal.container.variables[
+# Inspect the new variable and constraint added to the ED JuMP model:
+#   ed_model = sim_res.simulation.models.decision_models[2]
+#   ed_model.internal.container.variables[
 #       PSI.VariableKey{LineLossTotalApproximation, PSY.System}("")]
-#   model_quad.internal.container.constraints[
+#   ed_model.internal.container.constraints[
 #       InfrastructureSystems.Optimization.ConstraintKey{LineLossConstraintApproximation, PSY.System}("")]
 
 # =============================================================================
 # PART 4 – FLOW CANCELLING (transmission expansion, lossless)
 # =============================================================================
+
+include("Systems/5bus/build_5bus.jl")                      # 5-bus test-case helpers
+include("SiennaScripts/FlowCancelling/build_models.jl")    # flow-cancelling builders
+
 # Flow cancelling enables an investment model where candidate lines can be
 # "connected" (binary z_k = 1) or ignored (z_k = 0).  When z_k = 0 the
 # candidate line still appears in the PTDF matrix (it was there at build!
 # time), so its flow would normally affect other branches.  The flow-cancelling
 # variables v_k[t] ≈ z_k * flow[k,t] are used to subtract out those spurious
 # flows when the line is not built.
-#
-# Reference: Caramanis et al., IEEE PES 2016, eq. (3) and (18).
 
 # Build the 5-bus investment system: existing generators + candidate generators
 # + existing lines + candidate lines (parallel topology via intermediate buses)
 sys_inv = build_matpower_5bus_with_updated_lines()
 transform_single_time_series!(sys_inv, Hour(2), Hour(2))
+# Comment an additional phase shifting transformer to avoid an issue with different parallel types in PSI
 set_available!(get_component(PhaseShiftingTransformer, sys_inv, "bus-3-bus-4-i_5"), false)
 
 # Add candidate thermal generators (flagged with ext["is_candidate"] = true)
@@ -263,6 +343,8 @@ end
 # ──► add_candidate_line_data_without_parallel!  [Systems/5bus/build_5bus.jl:268-277]
 add_candidate_line_data_without_parallel!(sys_inv)
 
+# Now build the model with flow-cancelling terms.
+model_fc = build_model_with_flow_canceling_terms(sys_inv)
 # ──► build_model_with_flow_canceling_terms  [FlowCancelling/build_models.jl:497-560]
 #
 # Step 1: build base PTDF DecisionModel (identical to Part 1 structure)
@@ -315,7 +397,7 @@ add_candidate_line_data_without_parallel!(sys_inv)
 #     - Adds binary variable x_g  (GenerationInvestmentVariable)
 #     - Adds constraint: p_g[t] ≤ p_max_g * x_g  (GenerationInvestmentConstraint)
 #     - Appends project_cost_g * x_g to objective
-model_fc = build_model_with_flow_canceling_terms(sys_inv)
+
 solve!(model_fc)
 
 res_fc = OptimizationProblemResults(model_fc)
@@ -334,7 +416,12 @@ println("Generation investment decisions:\n", inv_gens)
 # Combines the flow-cancelling investment model (Part 4) with the quadratic
 # loss formulation (Part 3).  Requires an NLP-capable solver because of the
 # quadratic loss constraints.
-#
+
+model_fc_quad = build_model_with_flow_canceling_and_quadratic_losses(
+    sys_inv;
+    optimizer = optimizer_with_attributes(Ipopt.Optimizer),
+)
+
 # ──► build_model_with_flow_canceling_and_quadratic_losses
 #   [FlowCancelling/build_models.jl:666-714]
 #
@@ -360,11 +447,10 @@ println("Generation investment decisions:\n", inv_gens)
 #   simpler than the voltage-scaled variant in build_models.jl Part 3 but
 #   still physically meaningful for systems near nominal voltage.
 
-model_fc_quad = build_model_with_flow_canceling_and_quadratic_losses(
-    sys_inv;
-    optimizer = optimizer_with_attributes(Ipopt.Optimizer),
-)
 solve!(model_fc_quad)
+
+# This will fail since we are using Ipopt that does not support binary variables.
+# However, Gurobi can be used to solve MINLP problems.
 
 res_fc_quad = OptimizationProblemResults(model_fc_quad)
 println("=== Flow-cancelling + quadratic losses model solved ===")
