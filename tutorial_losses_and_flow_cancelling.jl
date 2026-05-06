@@ -11,11 +11,19 @@
 #      PTDF-based unit commitment / economic dispatch problem.
 #      Files: SiennaScripts/build_models.jl, SiennaScripts/run_models.jl,
 #             SiennaScripts/utils.jl
+#      References: F. Li and R. Bo: DCOPF-Based LMP Simulation: Algorithm,
+#                  Comparison With ACOPF, and Sensitivity.
+#                  IEEE Transactions on Power Systems, 2007.
+#
 #
 #   2. FLOW CANCELLING – a topology-expansion investment model where candidate
 #      lines are selectively connected / disconnected via binary variables and
-#      big-M constraints (Caramanis et al., IEEE PES 2016).
+#      big-M constraints.
 #      File: SiennaScripts/FlowCancelling/build_models.jl
+#      References: P.A. Ruiz, E. Goldis, A.M. Rudkevich, M.C. Caramanis,
+#                  C.R. Philbrick and J.M. Foster: Security-Constrained
+#                  Transmission Topology Control MILP Formulation Using
+#                  Sensitivity Factors. IEEE Transactions on Power Systems, 2016
 #
 # KEY MENTAL MODEL
 # ----------------
