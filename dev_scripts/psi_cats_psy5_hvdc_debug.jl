@@ -55,8 +55,8 @@ ED_PTDF_MODELS = Dict(
 )
 
 ED_MODELS = Dict(
-    Line => StaticBranchUnbounded,
-    Transformer2W => StaticBranchUnbounded,
+    Line => StaticBranchBounds,
+    Transformer2W => StaticBranchBounds,
     ThermalStandard => ThermalBasicDispatch,
     PowerLoad => StaticPowerLoad,
     RenewableDispatch => RenewableFullDispatch,
@@ -77,7 +77,7 @@ solver_xpress = JuMP.optimizer_with_attributes(Xpress.Optimizer, "MIPRELSTOP" =>
 solver_ipopt = JuMP.optimizer_with_attributes(Ipopt.Optimizer, "print_level" => 3)
 
 ### Debug code ###
-
+initial_time = DateTime("2019-01-01T01:00:00")
 sim = build_uc_ed_simulation_with_acopf(
     system,
     system;
@@ -87,6 +87,7 @@ sim = build_uc_ed_simulation_with_acopf(
     ptdf_ed = ptdf,
     uc_optimizer = solver_xpress,
     ed_optimizer = solver_ipopt,
+    initial_time = initial_time,
 )
 
 execute!(sim)
@@ -109,6 +110,7 @@ sim_res = SimulationResults(sim)
 res_old_uc = get_decision_problem_results(sim_res, "UC")
 res_old_ed = get_decision_problem_results(sim_res, "ED")
 
+q_param_load = read_realized_parameter(res_old_ed, "ReactivePowerTimeSeriesParameter__PowerLoad"; table_format = TableFormat.WIDE)
 v_mag_pf = read_realized_variable(res_old_ed, "PowerFlowVoltageMagnitude__ACBus"; table_format = TableFormat.WIDE)
 
 loss_factors = get_bus_loss_factors(res_old_ed; slack_number = "1951")      # ∂Loss/∂P at each bus
