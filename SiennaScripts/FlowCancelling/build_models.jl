@@ -10,7 +10,8 @@ const DEFAULT_UC_MODELS = Dict(
     #HydroDispatch => HydroDispatchRunOfRiver,
 )
 
-const DEFAULT_MILP_OPTIMIZER = optimizer_with_attributes(Xpress.Optimizer)
+const DEFAULT_MILP_OPTIMIZER = optimizer_with_attributes(Gurobi.Optimizer)
+#optimizer_with_attributes(Xpress.Optimizer)
 
 const PSI = PowerSimulations
 const PSY = PowerSystems
@@ -508,7 +509,7 @@ function build_model_with_flow_canceling_terms(sys)
     model = DecisionModel(
         template,
         sys;
-        optimizer = Xpress.Optimizer,
+        optimizer = DEFAULT_MILP_OPTIMIZER, #Xpress.Optimizer,
         name = "UC",
         store_variable_names=true,
     )
@@ -664,7 +665,7 @@ Requires an NLP-capable solver (e.g. Ipopt) because of the quadratic constraints
 """
 function build_model_with_flow_canceling_and_quadratic_losses(
     sys;
-    optimizer = optimizer_with_attributes(Ipopt.Optimizer),
+    optimizer = optimizer_with_attributes(Gurobi.Optimizer),
 )
     ptdf = PTDF(sys)
 
