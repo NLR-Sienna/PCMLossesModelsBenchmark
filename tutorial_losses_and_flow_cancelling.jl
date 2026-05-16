@@ -469,6 +469,102 @@ println("Line investment decisions (with losses):\n", inv_lines_quad)
 println("Generation investment decisions (with losses):\n", inv_gens_quad)
 
 # =============================================================================
+# PART 6 – FLOW CANCELLING WITH POWER FLOW IN THE LOOP
+# =============================================================================
+# This part extends Part 4 (flow cancelling, lossless) by running a full AC
+# power flow AFTER the optimizer has decided which candidates to build.
+#
+# The key difference from a plain post-optimization power flow is that the
+# AC power flow container is rebuilt from a *filtered* system: candidate
+# branches and generators whose investment variable equals zero are temporarily
+# marked unavailable before the Ybus is assembled and the Newton-Raphson solver
+# runs.  This means the voltage angles, branch flows, and loss factors returned
+# in the auxiliary variables reflect only the as-built topology.
+#
+# PSI changes required (PowerSimulations.jl):
+#   Ensure that your PowerSimulations is in the branch `rh/dev_pf_inthe_loop`
+#   1. PowerFlowEvaluationData gains three new optional fields:
+#        evaluator                – stored so the PF container can be rebuilt
+#        branch_investment_keys  – PSI variable keys for branch investment vars
+#        gen_investment_keys     – PSI variable keys for generator investment vars
+#   2. solve_power_flow! checks _has_investment_keys(pf_e_data) and, if true,
+#      calls _rebuild_pf_for_investment!, which
+#        a. marks unbuilt candidates unavailable  (_apply_investment_filter!)
+#        b. rebuilds ACPowerFlowData from the filtered system
+#        c. rebuilds the input key map
+#        d. returns a restore! closure (called in a finally block)
+#   3. New public function register_investment_keys_for_power_flow! lets the
+#      user declare which VariableType subtypes are investment decisions.
+#
+# ──► _has_investment_keys           [PowerSimulations.jl/src/network_models/power_flow_evaluation.jl]
+# ──► _apply_investment_filter!      [PowerSimulations.jl/src/network_models/power_flow_evaluation.jl]
+# ──► _rebuild_pf_for_investment!    [PowerSimulations.jl/src/network_models/power_flow_evaluation.jl]
+# ──► register_investment_keys_for_power_flow!  [same file, end]
+
+# Build the same 5-bus investment system as Part 4.
+sys_inv_pf = build_matpower_5bus_with_updated_lines()
+transform_single_time_series!(sys_inv_pf, Hour(2), Hour(2))
+set_available!(
+    get_component(PhaseShiftingTransformer, sys_inv_pf, "bus-3-bus-4-i_5"), false)
+for gen in candidate_projects_data(sys_inv_pf)
+    add_component!(sys_inv_pf, gen)
+end
+add_candidate_line_data_without_parallel!(sys_inv_pf)
+
+# Build the flow-cancelling model WITH AC power-flow-in-the-loop enabled.
+# The keyword `ignore_pf = false` adds
+#   power_flow_evaluation = ACPowerFlow(; calculate_loss_factors = true)
+# to the NetworkModel template so PSI runs a post-optimization AC power flow.
+# ──► build_model_with_flow_canceling_terms  [FlowCancelling/build_models.jl:497]
+model_fc_pf = build_model_with_flow_canceling_terms(sys_inv_pf; ignore_pf = false)
+
+# Register the investment variable types so PSI knows which components are
+# candidates and should be excluded when their investment variable is zero.
+# This must be called AFTER build! and BEFORE solve!.
+# ──► register_investment_keys_for_power_flow!  [PowerSimulations.jl/src/network_models/power_flow_evaluation.jl]
+register_investment_keys_for_power_flow!(
+    model_fc_pf,
+    BranchInvestmentVariable,
+    [GenerationInvestmentVariable],
+)
+
+solve!(model_fc_pf)
+
+res_fc_pf = OptimizationProblemResults(model_fc_pf)
+println("=== Flow-cancelling + investment-aware AC PF solved ===")
+println("Objective: ", JuMP.objective_value(model_fc_pf.internal.container.JuMPmodel))
+
+# Investment decisions – which candidates were actually built?
+inv_lines_pf = read_variable(res_fc_pf, PSI.VariableKey{BranchInvestmentVariable, Line}(""))
+inv_gens_pf  = read_variable(res_fc_pf, PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}(""))
+println("Built lines:\n",  inv_lines_pf)
+println("Built generators:\n", inv_gens_pf)
+
+# Power flow auxiliary variables – only reflect the built infrastructure.
+# Candidate lines/generators with z_k = 0 were excluded from the Ybus and
+# injection vectors when the AC power flow was solved.
+#
+# Note: the aux variable containers were allocated at build! time for ALL
+# branches (including candidates), so unbuilt candidates will show zero/NaN
+# flows; only built lines carry non-trivial values.
+branch_flows_pf = read_aux_variable(res_fc_pf, "PowerFlowBranchActivePowerFromTo__Line")
+loss_factors_pf = read_aux_variable(res_fc_pf, "PowerFlowLossFactors__ACBus")
+voltage_mag_pf  = read_aux_variable(res_fc_pf, "PowerFlowVoltageMagnitude__ACBus"; table_format = TableFormat.WIDE)
+println("Branch active power flows (built topology):")
+display(branch_flows_pf)
+println("Bus voltage magnitudes:")
+display(voltage_mag_pf)
+
+# Compare with the lossless flow-cancelling result from Part 4 to confirm
+# that the AC power flow accounts for voltage variation and losses absent
+# from the flat-voltage PTDF model:
+println("\nComparison: lossless (Part 4) vs. investment-aware AC PF (Part 6)")
+println("  Part 4 objective (PTDF, no PF): ",
+    JuMP.objective_value(model_fc.internal.container.JuMPmodel))
+println("  Part 6 objective (PTDF + AC PF results): ",
+    JuMP.objective_value(model_fc_pf.internal.container.JuMPmodel))
+
+# =============================================================================
 # WHERE TO GO NEXT
 # =============================================================================
 # Use the function-name references above as entry points into the source.
@@ -491,6 +587,12 @@ println("Generation investment decisions (with losses):\n", inv_gens_quad)
 #  ├── add_shift_terms_to_existing_line_constraints!         :266
 #  ├── add_shift_terms_to_candidate_line_constraints!        :312
 #  └── build_model_with_flow_canceling_and_quadratic_losses  :666
+#
+#  INVESTMENT-AWARE POWER FLOW IN THE LOOP
+#  ├── register_investment_keys_for_power_flow!  PowerSimulations.jl/src/network_models/power_flow_evaluation.jl
+#  ├── _has_investment_keys                      (same file)
+#  ├── _apply_investment_filter!                 (same file)
+#  └── _rebuild_pf_for_investment!               (same file)
 #
 #  UTILITY / POST-PROCESSING
 #  ├── get_bus_loss_factors                     utils.jl:73
