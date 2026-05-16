@@ -10,7 +10,7 @@ const DEFAULT_UC_MODELS = Dict(
     #HydroDispatch => HydroDispatchRunOfRiver,
 )
 
-const DEFAULT_MILP_OPTIMIZER = optimizer_with_attributes(Gurobi.Optimizer)
+const DEFAULT_MILP_OPTIMIZER = optimizer_with_attributes(Xpress.Optimizer)
 #optimizer_with_attributes(Xpress.Optimizer)
 
 const PSI = PowerSimulations
@@ -494,13 +494,24 @@ investment terms applied in one call.  Internally it:
 5. Adds line investment costs and candidate generation investment constraints to the
    objective.
 """
-function build_model_with_flow_canceling_terms(sys)
+function build_model_with_flow_canceling_terms(sys; ignore_pf = true)
     ptdf = PTDF(sys)
     all_lines       = collect(get_components(PSY.Line, sys))
     candidate_lines = filter(l -> occursin("candidate", get_name(l)), all_lines)
     existing_lines  = filter(l -> !occursin("candidate", get_name(l)), all_lines)
 
-    template = ProblemTemplate(NetworkModel(PTDFPowerModel; use_slacks = true))
+    network_model = if ignore_pf
+        NetworkModel(PTDFPowerModel; PTDF_matrix = ptdf, use_slacks = true)
+    else
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = ptdf,
+            use_slacks = true,
+            power_flow_evaluation = PowerFlows.ACPowerFlow(; calculate_loss_factors = true, calculate_voltage_stability_factors = true),
+        )
+    end
+
+    template = ProblemTemplate(network_model)
     set_device_model!(template, ThermalStandard, ThermalDispatchNoMin)
     set_device_model!(template, Line, StaticBranch)
     set_device_model!(template, PhaseShiftingTransformer, StaticBranch)
