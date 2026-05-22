@@ -567,6 +567,8 @@ function build_model_with_flow_canceling_terms(sys; ignore_pf = true)
 
     add_candidate_generation_investment_constraints!(model, ThermalStandard)
 
+    _fc_add_ptdf_branch_flow_with_fc_expressions!(model, sys, ptdf, candidate_lines, v_var)
+
     return model
 end
 
@@ -579,6 +581,116 @@ struct LineLossTotalApproximation <: PSI.VariableType end
 
 """Constraint type linking bus injections to quadratic losses."""
 struct LineLossConstraintApproximation <: PSI.ConstraintType end
+
+"""Expression type for the PTDF branch flow augmented with flow-cancelling correction terms."""
+struct PTDFBranchFlowWithFC <: PSI.ExpressionType end
+
+PSI.should_write_resulting_value(::Type{PTDFBranchFlowWithFC}) = true
+PSI.convert_result_to_natural_units(::Type{PTDFBranchFlowWithFC}) = true
+
+function _add_existing_branch_fc_expressions!(
+    container,
+    T::Type,
+    time_steps,
+    ptdf,
+    sys,
+    cand_info,
+    v_var,
+)
+    key = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlow, T}("")
+    if !haskey(container.expressions, key)
+        return nothing
+    end
+    ptdf_branch = container.expressions[key]
+    branch_names = axes(ptdf_branch, 1)
+    expr = PSI.add_expression_container!(
+        container,
+        PTDFBranchFlowWithFC(),
+        T,
+        branch_names,
+        time_steps,
+    )
+    for name in branch_names, t in time_steps
+        fc_expr = copy(ptdf_branch[name, t])
+        for (cand_name, from_num, to_num) in cand_info
+            shift = _get_ptdf_shift_term(ptdf, sys, name, from_num, to_num)
+            JuMP.add_to_expression!(fc_expr, shift, v_var[cand_name, t])
+        end
+        expr[name, t] = fc_expr
+    end
+    return expr
+end
+
+"""
+    _fc_add_ptdf_branch_flow_with_fc_expressions!(model, sys, ptdf, candidate_lines, v_var)
+
+Build PTDFBranchFlowWithFC expression containers for PSY.Line and all existing branch
+types (PSY.PhaseShiftingTransformer, PSY.TapTransformer, PSY.Transformer2W) by augmenting
+PTDFBranchFlow with FC correction terms. Each entry copies PTDFBranchFlow[name,t] and adds:
+  existing arc:   + Σ_cand Δ_{name,cand} · v_cand[t]
+  candidate arc:  + (Δ_{name,name}−1) · v_name[t] + Σ_{j≠name} Δ_{name,j} · v_j[t]
+Only PSY.Line entries can be candidates; all transformer types always use the existing formula.
+A PTDFBranchFlowWithFC container is created only for branch types whose PTDFBranchFlow
+expression is present in the container.
+"""
+function _fc_add_ptdf_branch_flow_with_fc_expressions!(
+    model::PSI.DecisionModel,
+    sys::PSY.System,
+    ptdf,
+    candidate_lines,
+    v_var,
+)
+    container = model.internal.container
+    time_steps = PSI.get_time_steps(container)
+
+    candidate_names = Set(get_name.(candidate_lines))
+    cand_info = [
+        (get_name(c), get_number(get_from(get_arc(c))), get_number(get_to(get_arc(c))))
+        for c in candidate_lines
+    ]
+
+    # --- PSY.Line expressions ---
+    ptdf_line = PSI.get_expression(container, PTDFBranchFlow(), PSY.Line)
+    line_names = axes(ptdf_line, 1)
+
+    expr_line = PSI.add_expression_container!(
+        container,
+        PTDFBranchFlowWithFC(),
+        PSY.Line,
+        line_names,
+        time_steps,
+    )
+
+    for name in line_names, t in time_steps
+        expr_line[name, t] = copy(ptdf_line[name, t])
+
+        if name in candidate_names
+            # Candidate arc: self coefficient is (shift - 1), cross coefficient is shift
+            for (cand_name, from_num, to_num) in cand_info
+                shift = _get_ptdf_shift_term(ptdf, sys, name, from_num, to_num)
+                if cand_name == name
+                    coeff = shift - 1.0
+                else
+                    coeff = shift
+                end
+                JuMP.add_to_expression!(expr_line[name, t], coeff, v_var[cand_name, t])
+            end
+        else
+            # Existing arc: each candidate contributes shift · v_cand[t]
+            for (cand_name, from_num, to_num) in cand_info
+                shift = _get_ptdf_shift_term(ptdf, sys, name, from_num, to_num)
+                JuMP.add_to_expression!(expr_line[name, t], shift, v_var[cand_name, t])
+            end
+        end
+    end
+
+    # --- Existing (non-candidate) branch types ---
+    for T in (PSY.PhaseShiftingTransformer, PSY.TapTransformer, PSY.Transformer2W, PSY.MonitoredLine)
+        _add_existing_branch_fc_expressions!(container, T, time_steps, ptdf, sys, cand_info, v_var)
+    end
+
+    return expr_line
+end
 
 """
 Add continuous loss variables to the model, one per reference bus per time step.
@@ -615,19 +727,25 @@ function _fc_add_loss_to_copperplate_balance!(model::PSI.DecisionModel, loss_var
     ref_buses = axes(con_bal, 1)
     ref_bus = only(ref_buses)
     for t in time_steps
-        set_normalized_coefficient(con_bal[ref_bus, t], loss_variable[ref_bus, t], 1)
+        JuMP.set_normalized_coefficient(con_bal[ref_bus, t], loss_variable[ref_bus, t], 1)
     end
 end
 
 """
-Add quadratic loss constraints: loss = -Σₖ Rₖ·(Σⱼ PTDFₖⱼ · injectionⱼ)²
+    _fc_add_quadratic_loss_constraints!(model, sys)
 
+Add quadratic loss constraints using the PTDFBranchFlowWithFC expressions:
+
+    loss[ref_bus, t] == -Σ_l R_l · FC_flow[l,t]² - Σ_{non-line branches} R_b · FC_flow[b,t]²
+
+where FC_flow is the PTDFBranchFlowWithFC expression (PTDF flow + FC correction terms).
+Covers PSY.Line and all transformer types (PhaseShiftingTransformer, TapTransformer,
+Transformer2W) for which a PTDFBranchFlowWithFC expression exists in the container.
 No voltage scaling is applied — suitable when a flat voltage profile is assumed.
 """
-function _fc_add_quadratic_loss_constraints!(model, sys, ptdf)
+function _fc_add_quadratic_loss_constraints!(model::PSI.DecisionModel, sys::PSY.System)
     container = model.internal.container
     time_steps = PSI.get_time_steps(container)
-    arcs_length = length(axes(ptdf, 2))
 
     loss_variable = PSI.get_variable(container, LineLossTotalApproximation(), PSY.System)
     ref_buses = axes(loss_variable, 1)
@@ -640,22 +758,32 @@ function _fc_add_quadratic_loss_constraints!(model, sys, ptdf)
         time_steps,
     )
 
-    R, _ = get_RX_vector(sys, ptdf)
+    fc_line = PSI.get_expression(container, PTDFBranchFlowWithFC(), PSY.Line)
+    line_names = axes(fc_line, 1)
+    R_line = Dict(get_name(l) => get_r(l) for l in get_components(get_available, PSY.Line, sys))
 
-    injection = container.expressions[InfrastructureSystems.Optimization.ExpressionKey{
-        ActivePowerBalance,
-        ACBus,
-    }("")]
-    bus_ax = axes(injection, 1)
-    bus_length = length(bus_ax)
+    # Collect (fc_expr, R_dict) for each non-Line branch type with FC expressions
+    other_branch_type_data = []
+    for T in (PSY.PhaseShiftingTransformer, PSY.TapTransformer, PSY.Transformer2W)
+        key = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlowWithFC, T}("")
+        if !haskey(container.expressions, key)
+            continue
+        end
+        fc = container.expressions[key]
+        R_dict = Dict(get_name(b) => get_r(b) for b in get_components(get_available, T, sys))
+        push!(other_branch_type_data, (fc, R_dict))
+    end
 
     for ref_bus in ref_buses, t in time_steps
         constraint[ref_bus, t] = JuMP.@constraint(
             PSI.get_jump_model(container),
             loss_variable[ref_bus, t] ==
-            -sum(
-                R[k] * (sum(ptdf[k, j] * injection[bus_ax[j], t] for j in 1:bus_length))^2
-                for k in 1:arcs_length
+            -sum(R_line[name] * fc_line[name, t]^2 for name in line_names) -
+            sum(
+                R_dict[name] * fc[name, t]^2
+                for (fc, R_dict) in other_branch_type_data
+                for name in axes(fc, 1);
+                init = 0.0,
             )
         )
     end
@@ -670,7 +798,8 @@ PTDF-based transmission loss approximation (no voltage scaling).
 This extends `build_model_with_flow_canceling_terms` by adding:
 - A loss variable per reference bus per time step.
 - The loss variable to the copper plate balance (G - D + loss = 0).
-- A quadratic constraint: loss = -Σₖ Rₖ·(Σⱼ PTDFₖⱼ·Pⱼ)²
+- A quadratic constraint: loss = -Σₖ Rₖ · FC_flow[k,t]²
+  where FC_flow[k,t] is the PTDFBranchFlowWithFC expression (PTDF flow + FC correction terms).
 
 Requires an NLP-capable solver (e.g. Ipopt) because of the quadratic constraints.
 """
@@ -719,7 +848,8 @@ function build_model_with_flow_canceling_and_quadratic_losses(
     # --- Quadratic loss approximation ---
     loss_var = _fc_add_loss_variables!(model)
     _fc_add_loss_to_copperplate_balance!(model, loss_var)
-    _fc_add_quadratic_loss_constraints!(model, sys, ptdf)
+    _fc_add_ptdf_branch_flow_with_fc_expressions!(model, sys, ptdf, candidate_lines, v_var)
+    _fc_add_quadratic_loss_constraints!(model, sys)
 
     return model
 end
