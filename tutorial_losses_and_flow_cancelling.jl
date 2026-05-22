@@ -417,6 +417,34 @@ inv_gens  = read_variable(res_fc, PSI.VariableKey{GenerationInvestmentVariable, 
 println("Line investment decisions:\n", inv_lines)
 println("Generation investment decisions:\n", inv_gens)
 
+# Explore both PTDFBranchFlow and PTDFBranchFlowWithFC expressions directly
+# from the JuMP model container.  Both are registered during build_model_with_-
+# flow_canceling_terms — PTDFBranchFlowWithFC is available even in the lossless
+# model so the reader can inspect the FC correction without running the NLP.
+#
+# model_fc.internal.container.expressions is a Dict{ExpressionKey, DenseAxisArray}
+# where each array entry is a JuMP.AffExpr — a symbolic linear combination of
+# VariableRefs that can be printed before any solve to see which variables
+# appear and with what coefficients.
+ptdf_key_fc = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlow,       Line}("")
+fc_key_fc   = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlowWithFC, Line}("")
+
+ptdf_exprs_fc = model_fc.internal.container.expressions[ptdf_key_fc]
+fc_exprs_fc   = model_fc.internal.container.expressions[fc_key_fc]
+first_branch  = first(axes(ptdf_exprs_fc, 1))
+
+println("PTDFBranchFlow[\"$first_branch\", 1] as JuMP.AffExpr (PTDF·injection only):")
+println("  ", ptdf_exprs_fc[first_branch, 1])
+println("PTDFBranchFlowWithFC[\"$first_branch\", 1] as JuMP.AffExpr (+ FC correction terms):")
+println("  ", fc_exprs_fc[first_branch, 1])
+
+# Read the same flows at the optimal dispatch as numerical values.
+# PTDFBranchFlow[branch, t] = Σⱼ PTDF[branch,j] · injection[j,t]
+ptdf_flows_line = read_expression(res_fc, "PTDFBranchFlow__Line")
+println("PTDF branch flows at optimality (Line):\n", ptdf_flows_line)
+fc_flows_line = read_expression(res_fc, "PTDFBranchFlowWithFC__Line")
+println("FC-corrected branch flows at optimality (Line):\n", fc_flows_line)
+
 # =============================================================================
 # PART 5 – FLOW CANCELLING WITH QUADRATIC LOSS APPROXIMATION
 # =============================================================================
@@ -449,10 +477,33 @@ model_fc_quad = build_model_with_flow_canceling_and_quadratic_losses(
 # Step 11: _fc_add_quadratic_loss_constraints!(model, sys, ptdf)
 #   [FlowCancelling/build_models.jl:616-651]
 #   Adds LineLossConstraintApproximation (quadratic, no voltage scaling):
-#   loss_var[t] = -Σ_k R[k] * (Σ_j PTDF[k,j] * injection[j,t])²
-#   Flat-voltage version of the quadratic constraint (V ≡ 1 p.u.):
-#   simpler than the voltage-scaled variant in build_models.jl Part 3 but
-#   still physically meaningful for systems near nominal voltage.
+#   loss_var[t] = -Σ_k R[k] * FC_flow[k,t]²
+#   where FC_flow[k,t] is the PTDFBranchFlowWithFC expression.
+
+# PTDFBranchFlowWithFC expressions are added to the container during the build
+# step above (before solve!).  Explore both PTDFBranchFlow and
+# PTDFBranchFlowWithFC directly via model_fc_quad.internal.container.expressions.
+#
+# The expressions dict maps ExpressionKey → DenseAxisArray{JuMP.AffExpr}.
+# Printing a JuMP.AffExpr entry shows the symbolic structure: PTDF coefficients
+# multiplied by injection VariableRefs (PTDFBranchFlow), plus BranchCancellingFlow
+# VariableRefs with shift-factor coefficients (PTDFBranchFlowWithFC).
+container_quad = model_fc_quad.internal.container
+
+ptdf_key_quad = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlow,       Line}("")
+fc_key_quad   = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlowWithFC, Line}("")
+
+println("Expression keys registered in the container:")
+for k in keys(container_quad.expressions); println("  ", k); end
+
+ptdf_exprs_quad = container_quad.expressions[ptdf_key_quad]
+fc_exprs_quad   = container_quad.expressions[fc_key_quad]
+first_line      = first(axes(fc_exprs_quad, 1))
+
+println("PTDFBranchFlow[\"$first_line\", 1] (PTDF·injection, no FC correction):")
+println("  ", ptdf_exprs_quad[first_line, 1])
+println("PTDFBranchFlowWithFC[\"$first_line\", 1] (adds BranchCancellingFlow correction terms):")
+println("  ", fc_exprs_quad[first_line, 1])
 
 solve!(model_fc_quad)
 
@@ -467,6 +518,14 @@ inv_lines_quad = read_variable(res_fc_quad, PSI.VariableKey{BranchInvestmentVari
 inv_gens_quad  = read_variable(res_fc_quad, PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}(""))
 println("Line investment decisions (with losses):\n", inv_lines_quad)
 println("Generation investment decisions (with losses):\n", inv_gens_quad)
+
+# Read the optimal FC-corrected branch flows.
+# Because should_write_resulting_value(PTDFBranchFlowWithFC) = true, the
+# solved expression values are stored in the result alongside variables.
+# PTDFBranchFlowWithFC[branch, t] incorporates the investment-dependent
+# flow-cancelling correction, so the values reflect the as-built topology.
+fc_flows_quad = read_expression(res_fc_quad, "PTDFBranchFlowWithFC__Line")
+println("FC-corrected branch flows at optimality (Line):\n", fc_flows_quad)
 
 # =============================================================================
 # PART 6 – FLOW CANCELLING WITH POWER FLOW IN THE LOOP
