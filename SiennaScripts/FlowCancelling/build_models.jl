@@ -55,7 +55,7 @@ function make_base_ptdf_model(
                 PTDF_matrix = ptdf_used,
                 use_slacks = true,
                 duals = [CopperPlateBalanceConstraint],
-                power_flow_evaluation = PowerFlows.ACPowerFlow(; calculate_loss_factors = true),
+                power_flow_evaluation = PowerFlows.ACPowerFlow(; calculate_loss_factors = true, calculate_voltage_stability_factors = true,
             ),
         )
     else
