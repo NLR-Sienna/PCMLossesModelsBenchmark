@@ -184,7 +184,7 @@ And data, a 9×2 Matrix{Float64}:
 #####################################################################
 ###Ychen validate through setting candidate_line_1 unavailable
 sys1 = build_matpower_5bus_with_updated_lines()
-transform_single_time_series!(sys_inv, Hour(2), Hour(2))
+transform_single_time_series!(sys1, Hour(2), Hour(2))
 # Comment an additional phase shifting transformer to avoid an issue with different parallel types in PSI
 set_available!(get_component(PhaseShiftingTransformer, sys1, "bus-3-bus-4-i_5"), false)
 
@@ -246,3 +246,5 @@ And data, a 8×2 Matrix{Float64}:
  -2.0                 -1.9989441163087203
   1.3741713661605393   1.110588324729772
   =#
+
+  #================
