@@ -20,9 +20,9 @@ const DEFAULT_ED_MODELS = Dict(
     HydroDispatch => HydroDispatchRunOfRiver,
 )
 
-const DEFAULT_MILP_OPTIMIZER = optimizer_with_attributes(Xpress.Optimizer)
+const DEFAULT_MILP_OPTIMIZER = (@isdefined Xpress) ? optimizer_with_attributes(Xpress.Optimizer) : nothing
 
-const DEFAULT_NLP_OPTIMIZER = optimizer_with_attributes(Ipopt.Optimizer)
+const DEFAULT_NLP_OPTIMIZER = (@isdefined Ipopt) ? optimizer_with_attributes(Ipopt.Optimizer) : nothing
 
 # PowerSimulations alias for convenience
 const PSI = PowerSimulations
@@ -682,6 +682,55 @@ function update_copperplate_quadratic_loss_approximation!(
 
     # Step 3: Add quadratic loss approximation constraints (P = I²R formulation)
     add_current_loss_constraint_quadratic_approximation!(model, sys, ptdf, res_old)
+end
+
+"""
+    update_copperplate_quadratic_loss_approximation_no_voltage!(
+        model::PSI.DecisionModel,
+        sys,
+        ptdf,
+    )
+
+Update the optimization model with quadratic loss approximation without voltage correction.
+
+# Arguments
+- `model::PSI.DecisionModel`: The decision model to update
+- `sys`: PowerSystems.jl System object
+- `ptdf`: PTDF matrix for the system
+
+# Details
+Orchestrates the three-step process for adding quadratic losses without requiring
+a prior AC power flow solution (no voltage magnitudes needed):
+
+1. Add loss variables to the model
+2. Update copper plate balance to include loss variables
+3. Add quadratic constraints relating bus injections to losses via P = I²R,
+   assuming flat voltage profile (V = 1.0 p.u.)
+
+**Use Case:**
+Used as a first-iteration or standalone quadratic loss formulation where
+no prior AC power flow solution is available. This is the appropriate choice
+for UC models where the nonconvex MIQP is solved in a single pass (e.g. with
+Gurobi NonConvex=2).
+
+**Comparison with voltage-corrected version:**
+`update_copperplate_quadratic_loss_approximation!` scales branch currents by
+voltage ratios from a previous AC solve; this function omits that correction,
+yielding a simpler formulation suitable for cases without warm-start results.
+"""
+function update_copperplate_quadratic_loss_approximation_no_voltage!(
+    model::PSI.DecisionModel,
+    sys,
+    ptdf,
+)
+    # Step 1: Add decision variables for total losses
+    loss_var = add_current_loss_variables!(model)
+
+    # Step 2: Modify nodal balance to account for losses (without fixed RHS)
+    add_quadratic_current_loss_to_copperplate_balance!(model, loss_var)
+
+    # Step 3: Add quadratic loss approximation constraints (flat voltage, P = I²R)
+    add_current_loss_constraint_quadratic_approximation_no_voltage!(model, sys, ptdf)
 end
 
 """
