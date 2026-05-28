@@ -10,7 +10,10 @@
 
 using Pkg
 this_path = @__DIR__
-Pkg.activate(joinpath(this_path, "..", ".."))
+#Pkg.activate(joinpath(this_path, "..", "..")) # Use this in your local machine
+Pkg.activate(this_path) # Use this in Kestrel
+Pkg.instantiate()
+kestrel_path = joinpath(this_path, "SiennaScripts", "CircularFlows")
 
 using PowerSystemCaseBuilder
 using PowerSystems
@@ -25,29 +28,34 @@ using Graphs
 using SimpleWeightedGraphs
 using Dates
 using DataFrames
+using Gurobi
 
-include(joinpath(this_path, "mapped_indices.jl"))
-include(joinpath(this_path, "circular_flows.jl"))
-include(joinpath(this_path, "../../Systems/RTS/build_rts.jl"))
-include(joinpath(this_path, "../build_models.jl"))
-include(joinpath(this_path, "../utils.jl"))
+#include(joinpath(this_path, "mapped_indices.jl"))
+#include(joinpath(this_path, "circular_flows.jl"))
+#include(joinpath(this_path, "../../Systems/RTS/build_rts.jl"))
+#include(joinpath(this_path, "../build_models.jl"))
+#include(joinpath(this_path, "../utils.jl"))
+
+include(joinpath(kestrel_path, "mapped_indices.jl"))
+include(joinpath(kestrel_path, "circular_flows.jl"))
+include(joinpath(kestrel_path, "../../Systems/RTS/build_rts.jl"))
+include(joinpath(kestrel_path, "../build_models.jl"))
+include(joinpath(kestrel_path, "../utils.jl"))
 
 # ---- Scenario A: negative renewable costs → circular flow expected when solved ----
 println("=== Scenario A: with circular flow (negative RE costs) ===")
 sys_a = build_rts_system()
 set_renewable_costs!(sys_a, 1.0) # Positive number is added negative to the objective function
 model_a = build_rts_model_with_quadratic_losses(sys_a)
-println("  Model A built successfully with quadratic losses ✓")
-# To detect circular flows after solving with Gurobi (NonConvex=2):
-#   PSI.solve!(model_a)
-#   results_a = PSI.OptimizationProblemResults(model_a)
-#   res_vars_a = PSI.read_variables(results_a)
-#   data_a = PSI.get_power_flow_data(
-#       only(PSI.get_power_flow_evaluation_data(PSI.get_optimization_container(model_a))))
-#   G_a = build_graph(data_a; time_step=1)
-#   add_hvdc_edges!(G_a, sys_a, res_vars_a, data_a; time_step=1)
-#   branches_a = collect(PSY.get_components(PSY.ACBranch, sys_a))
-#   C_a = find_circular_flows(G_a, data_a, branches_a)
+PSI.solve!(model_a)
+results_a = PSI.OptimizationProblemResults(model_a);
+res_vars_a = results_a.variable_values;
+data_a = PSI.get_power_flow_data(
+       only(PSI.get_power_flow_evaluation_data(PSI.get_optimization_container(model_a))));
+G_a = build_graph(data_a; time_step=1)
+add_hvdc_edges!(G_a, sys_a, res_vars_a, data_a; time_step=1);
+branches_a = collect(PSY.get_components(PSY.ACBranch, sys_a));
+C_a = find_circular_flows(G_a, data_a, branches_a)
 #   @assert length(C_a) > 0 "Scenario A FAILED: expected ≥1 circular flow, got 0"
 
 # ---- Scenario B: positive renewable costs → circular flow not expected when solved ----

@@ -56,7 +56,18 @@ Solving the resulting nonconvex MIQP requires Gurobi with NonConvex=2.
 """
 function build_rts_model_with_quadratic_losses(sys)
     ptdf = PTDF(sys)
-    optimizer = PSI.optimizer_with_attributes(HiGHS.Optimizer, "mip_rel_gap" => 0.01)
+    optimizer = optimizer_with_attributes(
+        Gurobi.Optimizer,
+        "MIPGap" => 0.001,
+        "OutputFlag" => 1,
+        "DisplayInterval" => 1,   # print every node
+        "LogFile" => "gurobi.log",
+        "Presolve" => 2,
+        "Heuristics" => 0.3,
+        "NonConvex" => 2,
+        "MIPFocus" => 2,        # bound improvement
+        "Cuts" => 2
+    )
     model = PSI.DecisionModel(
         make_uc_template(), sys;
         optimizer=optimizer, name="UC", store_variable_names=true,
