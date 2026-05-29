@@ -15,53 +15,27 @@ end
 
 # ── Private API helpers ────────────────────────────────────────────────────────
 
-# True if data uses the old PowerFlows API (field: branch_activepower_flow_from_to)
-function _has_old_pf_api(data)
-    return hasproperty(data, :branch_activepower_flow_from_to)
-end
-
-# Returns Dict{bus_number => internal_index} from either PowerFlowData variant.
-# RTS: data.bus_lookup already provides this.
-# CATS: constructed from unique bus numbers across all arc endpoints.
+# Returns Dict{bus_number => internal_index} from PSY5 PowerFlowData.
 function _get_bus_lookup(data)::Dict{Int64, Int64}
-    if _has_old_pf_api(data)
-        return data.bus_lookup
-    else
-        arcs = data.power_network_matrix.arc_admittance_from_to.axes[1]
-        all_bus_numbers = sort!(unique(vcat(first.(arcs), last.(arcs))))
-        return Dict{Int64, Int64}(bn => i for (i, bn) in enumerate(all_bus_numbers))
-    end
+    arcs = data.power_network_matrix.arc_admittance_from_to.axes[1]
+    all_bus_numbers = sort!(unique(vcat(first.(arcs), last.(arcs))))
+    return Dict{Int64, Int64}(bn => i for (i, bn) in enumerate(all_bus_numbers))
 end
 
-# Returns arc iterator as (from_internal_idx, to_internal_idx) pairs,
-# normalized to internal index space regardless of API variant.
+# Returns arc iterator as (from_internal_idx, to_internal_idx) pairs.
 function _get_arc_iter(data, bus_lookup::Dict{Int64, Int64})
-    if _has_old_pf_api(data)
-        return collect(zip(data.power_network_matrix.fb, data.power_network_matrix.tb))
-    else
-        arcs = data.power_network_matrix.arc_admittance_from_to.axes[1]
-        return Tuple{Int64, Int64}[(bus_lookup[first(a)], bus_lookup[last(a)]) for a in arcs]
-    end
+    arcs = data.power_network_matrix.arc_admittance_from_to.axes[1]
+    return Tuple{Int64, Int64}[(bus_lookup[first(a)], bus_lookup[last(a)]) for a in arcs]
 end
 
-# Returns (flows_from_to, flows_to_from) in MW for the given integer time step column.
+# Returns (flows_from_to, flows_to_from) in MW.
 function _get_flows(data, time_step::Int, flow_type::Symbol, base_power::Float64)
-    if _has_old_pf_api(data)
-        if flow_type == :active
-            return (data.branch_activepower_flow_from_to[:, time_step] .* base_power,
-                    data.branch_activepower_flow_to_from[:, time_step] .* base_power)
-        else
-            return (data.branch_reactivepower_flow_from_to[:, time_step] .* base_power,
-                    data.branch_reactivepower_flow_to_from[:, time_step] .* base_power)
-        end
+    if flow_type == :active
+        return (data.arc_active_power_flow_from_to[:, time_step] .* base_power,
+                data.arc_active_power_flow_to_from[:, time_step] .* base_power)
     else
-        if flow_type == :active
-            return (data.arc_active_power_flow_from_to[:, time_step] .* base_power,
-                    data.arc_active_power_flow_to_from[:, time_step] .* base_power)
-        else
-            return (data.arc_reactive_power_flow_from_to[:, time_step] .* base_power,
-                    data.arc_reactive_power_flow_to_from[:, time_step] .* base_power)
-        end
+        return (data.arc_reactive_power_flow_from_to[:, time_step] .* base_power,
+                data.arc_reactive_power_flow_to_from[:, time_step] .* base_power)
     end
 end
 
@@ -151,11 +125,9 @@ function add_hvdc_edges!(
         hvdc_df = res_vars["FlowActivePowerVariable__TwoTerminalGenericHVDCLine"]
     elseif haskey(res_vars, "FlowActivePowerFromToVariable__TwoTerminalGenericHVDCLine")
         hvdc_df = res_vars["FlowActivePowerFromToVariable__TwoTerminalGenericHVDCLine"]
-    elseif haskey(res_vars, InfrastructureSystems.Optimization.VariableKey{FlowActivePowerFromToVariable, TwoTerminalGenericHVDCLine}(""))
-        hvdc_df = res_vars[InfrastructureSystems.Optimization.VariableKey{FlowActivePowerFromToVariable, TwoTerminalGenericHVDCLine}("")]
     else
-        @error "No HVDC flow variable found in results; skipping HVDC edge insertion"
-        return  # no HVDC in this model
+        @info "No HVDC flow variable found in results (HVDC may be disabled); skipping HVDC edges"
+        return
     end
     hvdc_df isa Pair && (hvdc_df = last(hvdc_df))  # unwrap Pair{DateTime, DataFrame} if needed
     # Detect DataFrame format: PSI can return either
@@ -203,13 +175,13 @@ function add_hvdc_edges!(
     time_step::DateTime,
 )
     bus_lookup = _get_bus_lookup(data)
-    _add_hvdc_edges_inner!(G, sys, bus_lookup) do h
+    _add_hvdc_edges_inner!(G, sys, bus_lookup, h -> begin
         vals = hvdc_flows_ft[
             (hvdc_flows_ft.DateTime .== time_step) .& (hvdc_flows_ft.name .== PSY.get_name(h)),
             :value,
         ]
-        return vals[1]
-    end
+        vals[1]
+    end)
 end
 
 """
@@ -224,6 +196,106 @@ function find_circular_flows(
     branches::Vector{<:PSY.ACBranch},
 )
     bus_lookup = _get_bus_lookup(data)
+    bus_indices = MappedIndices(bus_lookup)
+    result = CircularFlow[]
+    for cc in GR.simplecycles(G)
+        c_branches, branch_flows = _find_connected_branches(G, bus_lookup, branches, cc)
+        push!(result, CircularFlow(cc, bus_indices[cc], PSY.get_name.(c_branches), branch_flows))
+    end
+    return result
+end
+
+"""
+    build_graph_from_ptdf(bus_injection_pu, ptdf; base_power) -> (G, bus_lookup)
+
+Build a directed flow graph from DC branch flows computed via PTDF.
+`bus_injection_pu` must be a plain vector of per-unit bus injections in the same
+bus ordering as ptdf (i.e., position k corresponds to ptdf[arc, k]).
+
+Use this when the AC power flow evaluation fails to converge; the PTDF flows
+are exact for the lossless DC model the optimizer solved against.
+"""
+function build_graph_from_ptdf(
+    bus_injection_pu::AbstractVector{Float64},
+    ptdf;
+    base_power::Float64 = 100.0,
+)
+    arc_ax = ptdf.axes[2]   # (from_bus, to_bus) arc tuples, length = n_arcs
+    num_arcs = length(arc_ax)
+    num_buses = length(bus_injection_pu)
+
+    all_bus_numbers = sort!(unique(vcat(first.(arc_ax), last.(arc_ax))))
+    bus_lookup = Dict{Int64, Int64}(bn => i for (i, bn) in enumerate(all_bus_numbers))
+
+    src = Vector{Int64}()
+    dst = Vector{Int64}()
+    w   = Vector{Float64}()
+
+    for (j, (from_bus, to_bus)) in enumerate(arc_ax)
+        flow_mw = sum(ptdf[j, k] * bus_injection_pu[k] for k in 1:num_buses) * base_power
+        f = bus_lookup[from_bus]
+        t = bus_lookup[to_bus]
+        if flow_mw > 0
+            push!(src, f); push!(dst, t); push!(w, flow_mw)
+        elseif flow_mw < 0
+            push!(src, t); push!(dst, f); push!(w, -flow_mw)
+        end
+    end
+
+    return SWG.SimpleWeightedDiGraph(src, dst, w), bus_lookup
+end
+
+"""
+    add_hvdc_edges!(G, sys, res_vars::Dict, bus_lookup::Dict; time_step)
+
+Overload for graphs built with `build_graph_from_ptdf`. Accepts `bus_lookup`
+(Dict{bus_number => internal_index}) directly instead of PowerFlowData.
+"""
+function add_hvdc_edges!(
+    G::SWG.SimpleWeightedDiGraph,
+    sys::PSY.System,
+    res_vars::Dict,
+    bus_lookup::Dict{Int64, Int64};
+    time_step::Int = 1,
+)
+    if haskey(res_vars, "FlowActivePowerVariable__TwoTerminalGenericHVDCLine")
+        hvdc_df = res_vars["FlowActivePowerVariable__TwoTerminalGenericHVDCLine"]
+    elseif haskey(res_vars, "FlowActivePowerFromToVariable__TwoTerminalGenericHVDCLine")
+        hvdc_df = res_vars["FlowActivePowerFromToVariable__TwoTerminalGenericHVDCLine"]
+    else
+        @info "No HVDC flow variable found in results (HVDC may be disabled); skipping HVDC edges"
+        return
+    end
+    hvdc_df isa Pair && (hvdc_df = last(hvdc_df))
+    is_long_format = "name" in names(hvdc_df) && "value" in names(hvdc_df)
+    if is_long_format
+        _add_hvdc_edges_inner!(G, sys, bus_lookup,
+            h -> Float64(hvdc_df[hvdc_df.name .== PSY.get_name(h), :value][time_step]))
+    else
+        hvdc_cols = [n for n in names(hvdc_df) if eltype(hvdc_df[!, n]) <: Number]
+        hvdc_names_in_sys = [PSY.get_name(h) for h in PSY.get_components(PSY.TwoTerminalGenericHVDCLine, sys)]
+        function _col(h_name)
+            h_name in hvdc_cols ? h_name : let
+                idx = findfirst(==(h_name), hvdc_names_in_sys)
+                isnothing(idx) ? hvdc_cols[1] : hvdc_cols[idx]
+            end
+        end
+        _add_hvdc_edges_inner!(G, sys, bus_lookup,
+            h -> Float64(hvdc_df[time_step, _col(PSY.get_name(h))]))
+    end
+end
+
+"""
+    find_circular_flows(G, bus_lookup, branches) -> Vector{CircularFlow}
+
+Overload for graphs built with `build_graph_from_ptdf`. Accepts `bus_lookup`
+(Dict{bus_number => internal_index}) directly instead of PowerFlowData.
+"""
+function find_circular_flows(
+    G::SWG.SimpleWeightedDiGraph,
+    bus_lookup::Dict{Int64, Int64},
+    branches::Vector{<:PSY.ACBranch},
+)
     bus_indices = MappedIndices(bus_lookup)
     result = CircularFlow[]
     for cc in GR.simplecycles(G)
