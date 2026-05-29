@@ -656,3 +656,42 @@ function build_uc_double_ed_simulation_with_acopf_and_uc_linear_ed_quadratic_los
 
     return sim
 end
+
+"""
+    build_uc_ed_simulation_with_ed_quadratic_losses_no_voltage(
+        sys_uc, sys_ed;
+        uc_models, ed_models, uc_optimizer, ed_optimizer, ptdf_uc, ptdf_ed
+    ) -> Simulation
+
+Build a two-stage UC–ED simulation where:
+- UC uses a lossless PTDF model (binary decisions, solved by a MILP optimizer).
+- ED uses a PTDF model augmented with quadratic P=I²R losses assuming flat
+  voltage (V=1.0 p.u.). Binaries are fixed via SemiContinuousFeedforward from
+  UC, so the ED is a pure NLP solvable by Ipopt — no Gurobi required.
+
+Loss = Σₖ Rₖ × (Σⱼ PTDFₖⱼ × Injectionⱼ)²
+"""
+function build_uc_ed_simulation_with_ed_quadratic_losses_no_voltage(
+    sys_uc::PSY.System,
+    sys_ed::PSY.System;
+    uc_models = DEFAULT_UC_MODELS,
+    ed_models = DEFAULT_ED_MODELS,
+    uc_optimizer = DEFAULT_MILP_OPTIMIZER,
+    ed_optimizer = DEFAULT_NLP_OPTIMIZER,
+    ptdf_uc = nothing,
+    ptdf_ed = nothing,
+)
+    ptdf_uc_used = isnothing(ptdf_uc) ? PTDF(sys_uc) : ptdf_uc
+    ptdf_ed_used = isnothing(ptdf_ed) ? PTDF(sys_ed) : ptdf_ed
+
+    sim = build_uc_ed_simulation_with_no_losses(
+        sys_uc, sys_ed;
+        uc_models, ed_models, uc_optimizer, ed_optimizer,
+        ptdf_uc = ptdf_uc_used, ptdf_ed = ptdf_ed_used,
+    )
+
+    ed_model = sim.models.decision_models[2]
+    update_copperplate_quadratic_loss_approximation_no_voltage!(ed_model, sys_ed, ptdf_ed_used)
+
+    return sim
+end
