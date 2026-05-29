@@ -56,25 +56,28 @@ G_a = build_graph(data_a; time_step=1)
 add_hvdc_edges!(G_a, sys_a, res_vars_a, data_a; time_step=1);
 branches_a = collect(PSY.get_components(PSY.ACBranch, sys_a));
 C_a = find_circular_flows(G_a, data_a, branches_a)
+
+aux_vars = results_a.aux_variable_values
+voltage_factors_a = aux_vars[InfrastructureSystems.Optimization.AuxVarKey{PowerFlowVoltageStabilityFactors, ACBus}("")]
 #   @assert length(C_a) > 0 "Scenario A FAILED: expected ≥1 circular flow, got 0"
 
 # ---- Scenario B: positive renewable costs → circular flow not expected when solved ----
-println("=== Scenario B: without circular flow (HVDC disabled) ===")
+println("=== Scenario B: without circular flow  ===")
 sys_b = build_rts_system()
 set_renewable_costs!(sys_b, -1.0) # Negative number is added positive to the objective function, but HVDC loop incentive is removed by setting HVDC losses to 0 and allowing free reactive power
 model_b = build_rts_model_with_quadratic_losses(sys_b)
 println("  Model B built successfully with quadratic losses ✓")
-# To detect circular flows after solving with Gurobi (NonConvex=2):
-#   PSI.solve!(model_b)
-#   results_b = PSI.OptimizationProblemResults(model_b)
-#   res_vars_b = PSI.read_variables(results_b)
-#   data_b = PSI.get_power_flow_data(
-#       only(PSI.get_power_flow_evaluation_data(PSI.get_optimization_container(model_b))))
-#   G_b = build_graph(data_b; time_step=1)
-#   add_hvdc_edges!(G_b, sys_b, res_vars_b, data_b; time_step=1)
-#   branches_b = collect(PSY.get_components(PSY.ACBranch, sys_b))
-#   C_b = find_circular_flows(G_b, data_b, branches_b)
+PSI.solve!(model_b)
+results_b = PSI.OptimizationProblemResults(model_b);
+res_vars_b = results_b.variable_values;
+data_b = PSI.get_power_flow_data(
+       only(PSI.get_power_flow_evaluation_data(PSI.get_optimization_container(model_b))));
+G_b = build_graph(data_b; time_step=1)
+add_hvdc_edges!(G_b, sys_b, res_vars_b, data_b; time_step=1)
+branches_b = collect(PSY.get_components(PSY.ACBranch, sys_b))
+C_b = find_circular_flows(G_b, data_b, branches_b)
 #   @assert length(C_b) == 0 "Scenario B FAILED: expected 0 circular flows, got $(length(C_b))"
 
-println("\nBoth models built with quadratic losses.")
-println("Solve with Gurobi (NonConvex=2) to run circular flow detection.")
+aux_vars_b = results_b.aux_variable_values
+voltage_factors_b = aux_vars_b[InfrastructureSystems.Optimization.AuxVarKey{PowerFlowVoltageStabilityFactors, ACBus}("")]
+

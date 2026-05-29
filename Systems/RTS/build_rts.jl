@@ -26,7 +26,7 @@ function make_uc_template()
         PTDFPowerModel;
         use_slacks=true,
         duals=[CopperPlateBalanceConstraint],
-        power_flow_evaluation=PowerFlows.ACPowerFlow(; calculate_loss_factors=true),
+        power_flow_evaluation=PowerFlows.ACPowerFlow(; calculate_loss_factors=true, calculate_voltage_stability_factors = true),
     ))
     set_device_model!(template, Line, StaticBranchBounds)
     set_device_model!(template, TapTransformer, StaticBranchBounds)

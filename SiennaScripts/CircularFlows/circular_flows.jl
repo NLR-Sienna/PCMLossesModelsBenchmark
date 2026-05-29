@@ -151,7 +151,10 @@ function add_hvdc_edges!(
         hvdc_df = res_vars["FlowActivePowerVariable__TwoTerminalGenericHVDCLine"]
     elseif haskey(res_vars, "FlowActivePowerFromToVariable__TwoTerminalGenericHVDCLine")
         hvdc_df = res_vars["FlowActivePowerFromToVariable__TwoTerminalGenericHVDCLine"]
+    elseif haskey(res_vars, InfrastructureSystems.Optimization.VariableKey{FlowActivePowerFromToVariable, TwoTerminalGenericHVDCLine}(""))
+        hvdc_df = res_vars[InfrastructureSystems.Optimization.VariableKey{FlowActivePowerFromToVariable, TwoTerminalGenericHVDCLine}("")]
     else
+        @error "No HVDC flow variable found in results; skipping HVDC edge insertion"
         return  # no HVDC in this model
     end
     hvdc_df isa Pair && (hvdc_df = last(hvdc_df))  # unwrap Pair{DateTime, DataFrame} if needed
