@@ -6,6 +6,38 @@ using Dates
 
 const PSY = PowerSystems
 
+# Both naming conventions that PSI uses across formulation versions.
+const _HVDC_FLOW_KEYS = (
+    "FlowActivePowerVariable__TwoTerminalGenericHVDCLine",
+    "FlowActivePowerFromToVariable__TwoTerminalGenericHVDCLine",
+)
+
+"""
+    read_hvdc_flow_variables(res [, read_fn]) -> Dict{String, DataFrame}
+
+Return a `Dict` containing whichever HVDC flow variable key(s) are present in `res`.
+Missing keys are silently skipped, so the Dict may be empty (which `add_hvdc_edges!`
+handles gracefully with an @info notice).
+
+`read_fn` is the PSI function used to read a single variable by name:
+- `read_variable`          for `OptimizationProblemResults`  (default)
+- `read_realized_variable` for `SimulationProblemResults`
+
+Avoids calling `read_variables(res)` for *all* stored variables, which would fail
+when post-build variables such as `LineLossTotalApproximation__System` are present in
+the container but were never allocated in the serialised results.
+"""
+function read_hvdc_flow_variables(res, read_fn::Function = read_variable)::Dict{String, DataFrame}
+    out = Dict{String, DataFrame}()
+    for k in _HVDC_FLOW_KEYS
+        try
+            out[k] = read_fn(res, k)
+        catch
+        end
+    end
+    return out
+end
+
 struct CircularFlow
     buses::Vector{Int64}        # internal graph node indices
     bus_numbers::Vector{Int64}  # PSY bus numbers

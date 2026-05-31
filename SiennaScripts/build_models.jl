@@ -734,6 +734,62 @@ function update_copperplate_quadratic_loss_approximation_no_voltage!(
 end
 
 """
+    update_copperplate_quadratic_loss_approximation_no_voltage_untracked!(
+        model::PSI.DecisionModel,
+        sys,
+        ptdf,
+    )
+
+Identical physics to `update_copperplate_quadratic_loss_approximation_no_voltage!` but
+uses raw JuMP variables that are **not** registered in the PSI container metadata.
+
+Use this variant inside a PSI `Simulation`: the HDF5 store pre-allocates slots only for
+variables declared during `build!`, so adding a new PSI-tracked variable post-build
+causes `write_model_variable_results!` to fail with a missing-key error.  Raw JuMP
+variables are invisible to PSI's serialisation layer while still living in the JuMP
+model and being referenced correctly by the constraints.
+"""
+function update_copperplate_quadratic_loss_approximation_no_voltage_untracked!(
+    model::PSI.DecisionModel,
+    sys,
+    ptdf,
+)
+    container  = model.internal.container
+    time_steps = PSI.get_time_steps(container)
+    arcs_length = length(axes(ptdf, 2))
+
+    con_bal  = PSI.get_constraint(container, CopperPlateBalanceConstraint(), PSY.System)
+    ref_buses = axes(con_bal, 1)
+    ref_bus   = only(ref_buses)
+
+    R, _ = get_RX_vector(sys, ptdf)
+
+    injection = container.expressions[InfrastructureSystems.Optimization.ExpressionKey{
+        ActivePowerBalance, ACBus}("")]
+    bus_ax    = axes(injection, 1)
+    bus_length = length(bus_ax)
+
+    jump_model = PSI.get_jump_model(container)
+
+    for t in time_steps
+        # Create a plain JuMP variable — PSI never sees it, so the HDF5 store is unaffected.
+        loss_var = JuMP.@variable(jump_model,
+            base_name = "LineLossUntracked_{$(ref_bus)}_{$(t)}")
+
+        # (G - D) + loss_var = 0
+        JuMP.set_normalized_coefficient(con_bal[ref_bus, t], loss_var, 1)
+
+        # loss_var = -Σ_k R_k * (Σ_j PTDF_kj * P_j)^2
+        JuMP.@constraint(jump_model,
+            loss_var == -sum(
+                R[k] * (sum(ptdf[k, j] * injection[bus_ax[j], t] for j in 1:bus_length))^2
+                for k in 1:arcs_length
+            )
+        )
+    end
+end
+
+"""
     update_transmission_constraints_with_losses!(
         model,
         res_old,

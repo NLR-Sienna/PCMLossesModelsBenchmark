@@ -69,6 +69,7 @@ function build_uc_ed_simulation_with_no_losses(
     ed_optimizer = DEFAULT_NLP_OPTIMIZER,
     ptdf_uc = nothing,
     ptdf_ed = nothing,
+    ignore_pf = false,
 )
     # Use provided PTDF matrices or compute them if not provided
     if isnothing(ptdf_uc)
@@ -89,6 +90,7 @@ function build_uc_ed_simulation_with_no_losses(
         optimizer = uc_optimizer,
         ptdf = ptdf_uc_used,
         name = "UC",
+        ignore_pf = ignore_pf,
     )
 
     # Create ED model: optimizes dispatch given fixed commitments
@@ -98,6 +100,7 @@ function build_uc_ed_simulation_with_no_losses(
         optimizer = ed_optimizer,
         ptdf = ptdf_ed_used,
         name = "ED",
+        ignore_pf = ignore_pf,
     )
 
     # Package models into simulation structure
@@ -680,6 +683,7 @@ function build_uc_ed_simulation_with_ed_quadratic_losses_no_voltage(
     ed_optimizer = DEFAULT_NLP_OPTIMIZER,
     ptdf_uc = nothing,
     ptdf_ed = nothing,
+    ignore_pf = false,
 )
     ptdf_uc_used = isnothing(ptdf_uc) ? PTDF(sys_uc) : ptdf_uc
     ptdf_ed_used = isnothing(ptdf_ed) ? PTDF(sys_ed) : ptdf_ed
@@ -688,10 +692,12 @@ function build_uc_ed_simulation_with_ed_quadratic_losses_no_voltage(
         sys_uc, sys_ed;
         uc_models, ed_models, uc_optimizer, ed_optimizer,
         ptdf_uc = ptdf_uc_used, ptdf_ed = ptdf_ed_used,
+        ignore_pf = ignore_pf,
     )
 
     ed_model = sim.models.decision_models[2]
-    update_copperplate_quadratic_loss_approximation_no_voltage!(ed_model, sys_ed, ptdf_ed_used)
+    # Use the untracked variant: HDF5 store has no slot for post-build variables.
+    update_copperplate_quadratic_loss_approximation_no_voltage_untracked!(ed_model, sys_ed, ptdf_ed_used)
 
     return sim
 end
