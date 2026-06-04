@@ -278,6 +278,97 @@ function build_graph_from_ptdf(
 end
 
 """
+    build_graph_from_pf_aux_variables(res_ed, sys; time_step) -> (G, bus_lookup)
+
+Build a directed flow graph from actual AC power flow branch flows stored in PSI
+aux variables after an ED solve with `power_flow_evaluation` enabled.
+
+Reads `PowerFlowBranchActivePowerFromTo/ToFrom__Line` and
+`PowerFlowBranchActivePowerFromTo/ToFrom__TapTransformer` (in MW, already scaled)
+and applies the same direction-selection logic as `build_graph`.
+
+Returns `(G, bus_lookup)` with the same signature as `build_graph_from_ptdf`
+so `add_hvdc_edges!(G, sys, res_vars, bus_lookup)` and
+`find_circular_flows(G, bus_lookup, branches)` can be called unchanged.
+"""
+function build_graph_from_pf_aux_variables(
+    res_ed,
+    sys::PSY.System;
+    time_step::Int = 1,
+)
+    line_ft_df = read_realized_aux_variable(
+        res_ed, "PowerFlowBranchActivePowerFromTo__Line"; table_format = TableFormat.WIDE)
+    line_tf_df = read_realized_aux_variable(
+        res_ed, "PowerFlowBranchActivePowerToFrom__Line"; table_format = TableFormat.WIDE)
+    local tap_ft_df, tap_tf_df
+    try
+        tap_ft_df = read_realized_aux_variable(
+            res_ed, "PowerFlowBranchActivePowerFromTo__TapTransformer"; table_format = TableFormat.WIDE)
+        tap_tf_df = read_realized_aux_variable(
+            res_ed, "PowerFlowBranchActivePowerToFrom__TapTransformer"; table_format = TableFormat.WIDE)
+    catch
+        tap_ft_df = DataFrame()
+        tap_tf_df = DataFrame()
+    end
+
+    line_names = names(line_ft_df)[2:end]
+    tap_names  = isempty(tap_ft_df) ? String[] : names(tap_ft_df)[2:end]
+
+    all_bus_numbers = sort!(unique(Int64[
+        [PSY.get_number(PSY.get_from_bus(PSY.get_component(PSY.Line, sys, n))) for n in line_names];
+        [PSY.get_number(PSY.get_to_bus(PSY.get_component(PSY.Line, sys, n)))   for n in line_names];
+        [PSY.get_number(PSY.get_from_bus(PSY.get_component(PSY.TapTransformer, sys, n))) for n in tap_names];
+        [PSY.get_number(PSY.get_to_bus(PSY.get_component(PSY.TapTransformer, sys, n)))   for n in tap_names];
+    ]))
+    bus_lookup = Dict{Int64, Int64}(bn => i for (i, bn) in enumerate(all_bus_numbers))
+
+    src = Vector{Int64}()
+    dst = Vector{Int64}()
+    w   = Vector{Float64}()
+
+    function _push_edge!(flow_ft, flow_tf, from_no, to_no)
+        (flow_ft == 0.0 && flow_tf == 0.0) && return
+        f = bus_lookup[from_no]
+        t = bus_lookup[to_no]
+        direction_ft = true
+        if sign(flow_ft) == sign(flow_tf)
+            abs(flow_ft) < abs(flow_tf) && (direction_ft = false)
+        elseif sign(flow_ft) != 1
+            direction_ft = false
+        end
+        if direction_ft
+            push!(src, f); push!(dst, t); push!(w, flow_ft)
+        else
+            push!(src, t); push!(dst, f); push!(w, flow_tf)
+        end
+    end
+
+    for name in line_names
+        branch = PSY.get_component(PSY.Line, sys, name)
+        isnothing(branch) && continue
+        _push_edge!(
+            Float64(line_ft_df[time_step, name]),
+            Float64(line_tf_df[time_step, name]),
+            PSY.get_number(PSY.get_from_bus(branch)),
+            PSY.get_number(PSY.get_to_bus(branch)),
+        )
+    end
+
+    for name in tap_names
+        branch = PSY.get_component(PSY.TapTransformer, sys, name)
+        isnothing(branch) && continue
+        _push_edge!(
+            Float64(tap_ft_df[time_step, name]),
+            Float64(tap_tf_df[time_step, name]),
+            PSY.get_number(PSY.get_from_bus(branch)),
+            PSY.get_number(PSY.get_to_bus(branch)),
+        )
+    end
+
+    return SWG.SimpleWeightedDiGraph(src, dst, w), bus_lookup
+end
+
+"""
     add_hvdc_edges!(G, sys, res_vars::Dict, bus_lookup::Dict; time_step)
 
 Overload for graphs built with `build_graph_from_ptdf`. Accepts `bus_lookup`
