@@ -61,6 +61,31 @@ const RTS_ED_MODELS = Dict(
     TwoTerminalGenericHVDCLine  => HVDCTwoTerminalLossless,
 )
 
+"""
+    detect_rts_circular_flows_sim_quad(
+        sys;
+        time_step::Int = 1,
+        use_pf::Bool = true
+    ) -> Tuple{Vector{CircularFlow}, Simulation}
+
+Build and execute a cascaded UC+ED simulation for the RTS system, then detect
+circular flows in the ED solution.
+
+`ignore_pf_uc = true` is hardcoded: UC never runs the post-solve AC power flow.
+Only the ED stage runs AC power flow post-solve, so voltage stability factors are
+always available regardless of the `use_pf` setting.
+
+# Arguments
+- `sys`: `PSY.System` to optimise.
+- `time_step`: which time-step of the simulation to analyse (default: `1`).
+- `use_pf`: when `true` (default), builds the flow graph from actual AC power
+  flow branch flows stored as PSI auxiliary variables; when `false`, falls back
+  to PTDF × bus-injection estimates. Both paths still produce voltage stability
+  factors because the ED always runs AC power flow post-solve.
+
+# Returns
+- `(circular_flows::Vector{CircularFlow}, sim::Simulation)`
+"""
 function detect_rts_circular_flows_sim_quad(sys; time_step::Int = 1, use_pf::Bool = true)
     ptdf = PTDF(sys)
 
@@ -142,4 +167,4 @@ stab_factors_b = read_realized_aux_variable(
     table_format = TableFormat.WIDE,
 )
 
-print_stability_comparison(stab_factors_a, stab_factors_b)
+print_stability_comparison(stab_factors_a, stab_factors_b; top_n = 42)

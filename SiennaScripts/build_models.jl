@@ -52,6 +52,8 @@ Create a PTDF-based decision model without building it.
 - `optimizer`: JuMP-compatible optimizer (default: DEFAULT_MILP_OPTIMIZER)
 - `ptdf`: Pre-computed PTDF matrix (default: nothing, computed if not provided)
 - `name`: Name identifier for the model (default: "UC")
+- `ignore_pf`: Skip post-solve AC power flow evaluation; when `false` (default) loss factors
+  and voltage stability factors are computed and stored as auxiliary variables
 
 # Returns
 - `DecisionModel`: Unbuilt decision model (call `build!` separately)
@@ -61,7 +63,8 @@ Creates the model structure with:
 - PTDF-based network formulation
 - Slack variables for constraint relaxation diagnostics
 - Dual variable computation for nodal balance
-- AC power flow evaluation with loss factor calculation
+- AC power flow evaluation with loss factor and voltage stability factor calculation
+  (populates `PowerFlowVoltageStabilityFactors__ACBus` auxiliary variable; skipped when `ignore_pf = true`)
 
 This function is used internally by `build_ptdf_model_without_losses`, which
 additionally calls `build!` to construct the JuMP model.
@@ -78,7 +81,8 @@ function make_ptdf_model_without_losses(
     # Create problem template with PTDF network model
     # - use_slacks: Add slack variables for infeasibility diagnosis
     # - duals: Compute dual variables for nodal balance constraints
-    # - calculate_loss_factors: Enable loss factor computation in AC power flow
+    # - calculate_loss_factors/calculate_voltage_stability_factors: Enable loss factor and
+    #   voltage stability factor computation in the post-solve AC power flow (ignore_pf=false)
     if isnothing(ptdf)
         ptdf_used = PTDF(sys)
     else
@@ -122,6 +126,31 @@ function make_ptdf_model_without_losses(
     return decision_model
 end
 
+"""
+    make_acopf_model(sys::PSY.System) -> DecisionModel
+
+Create a full AC OPF decision model without building it.
+
+# Arguments
+- `sys::PSY.System`: PowerSystems.jl system containing network and device data
+- `device_models`: Dictionary mapping device types to formulation models (default: DEFAULT_ED_MODELS)
+- `optimizer`: JuMP-compatible NLP optimizer (default: DEFAULT_NLP_OPTIMIZER)
+- `ptdf`: Pre-computed PTDF matrix (default: nothing, computed if not provided)
+- `name`: Name identifier for the model (default: "ED")
+- `ignore_pf`: Skip post-solve AC power flow evaluation; when `false` (default) loss factors
+  and voltage stability factors (`PowerFlowVoltageStabilityFactors__ACBus`) are computed
+  and stored as auxiliary variables
+
+# Returns
+- `DecisionModel`: Unbuilt decision model (call `build!` separately)
+
+# Details
+Creates the model structure with:
+- ACPPowerModel full AC OPF network formulation
+- Slack variables for constraint relaxation diagnostics
+- AC power flow evaluation with loss factor and voltage stability factor calculation
+  (skipped when `ignore_pf = true`)
+"""
 function make_acopf_model(
     sys::PSY.System;
     device_models = DEFAULT_ED_MODELS,
@@ -131,10 +160,10 @@ function make_acopf_model(
     ignore_pf = false,
 )
 
-    # Create problem template with PTDF network model
+    # Create problem template with AC OPF network model
     # - use_slacks: Add slack variables for infeasibility diagnosis
-    # - duals: Compute dual variables for nodal balance constraints
-    # - calculate_loss_factors: Enable loss factor computation in AC power flow
+    # - calculate_loss_factors/calculate_voltage_stability_factors: Enable loss factor and
+    #   voltage stability factor computation in the post-solve AC power flow (ignore_pf=false)
     if isnothing(ptdf)
         ptdf_used = PTDF(sys)
     else
@@ -187,6 +216,9 @@ Build a PTDF (Power Transfer Distribution Factor) unit commitment model without 
 - `sys::PSY.System`: PowerSystems.jl system containing network and device data
 - `device_models`: Dictionary mapping device types to their formulation models (default: DEFAULT_UC_MODELS)
 - `optimizer`: JuMP-compatible optimizer for solving the model (default: DEFAULT_MILP_OPTIMIZER)
+- `ptdf`: Pre-computed PTDF matrix (default: nothing, computed if not provided)
+- `ignore_pf`: Skip post-solve AC power flow evaluation; when `false` (default) loss factors
+  and voltage stability factors are computed and stored as auxiliary variables
 
 # Returns
 - `DecisionModel`: Built decision model ready for solving
@@ -196,7 +228,9 @@ Creates a NetworkModel with:
 - PTDFPowerModel formulation
 - Slack variables enabled for constraint relaxation
 - Duals computed for CopperPlateBalanceConstraint
-- AC power flow evaluation with loss factor calculation
+- AC power flow evaluation with loss factor and voltage stability factor calculation
+  (skipped when `ignore_pf = true`; auxiliary variables including
+  `PowerFlowVoltageStabilityFactors__ACBus` are not available in that case)
 """
 function build_ptdf_model_without_losses(
     sys::PSY.System;
@@ -889,6 +923,8 @@ Build a PTDF unit commitment model with linearized transmission loss approximati
 - `sys::PSY.System`: PowerSystems.jl System object
 - `res_old`: Previous iteration's optimization results (or lossless solution for first iteration)
 - `injection_old`: Previous iteration's bus injection values
+- `device_models`: Dictionary mapping device types to formulation models (default: DEFAULT_UC_MODELS)
+- `optimizer`: JuMP-compatible optimizer (default: DEFAULT_MILP_OPTIMIZER)
 
 # Returns
 - `DecisionModel`: Built decision model with loss approximation, ready for solving
@@ -897,6 +933,8 @@ Build a PTDF unit commitment model with linearized transmission loss approximati
 This function creates a comprehensive loss-aware UC model by:
 
 **Step 1:** Build baseline PTDF model (same structure as lossless model)
+- The baseline model uses `ignore_pf = false`, so loss factors and voltage stability
+  factors (`PowerFlowVoltageStabilityFactors__ACBus`) are available as auxiliary variables
 
 **Step 2:** Extract loss parameters from previous solution:
 - `loss_factors`: ∂Loss/∂Injection sensitivity at each bus (from power flow)
@@ -904,7 +942,7 @@ This function creates a comprehensive loss-aware UC model by:
 
 **Step 3:** Update copper plate balance constraints:
 - Add loss variables and constraints
-- Linearize losses around previous operating point: 
+- Linearize losses around previous operating point:
   Loss ≈ Loss₀ + Σᵢ (∂Loss/∂Pᵢ) × (Pᵢ - Pᵢ,₀)
 
 **Step 4:** Update transmission constraints:
@@ -965,6 +1003,9 @@ This function creates an economic dispatch model with accurate quadratic loss re
 **Step 1:** Build baseline PTDF model structure
 - Uses ED device models (ThermalBasicDispatch, no commitment variables)
 - Creates PTDF matrix for network representation
+- Post-solve AC power flow runs with `ignore_pf = false`, so loss factors and voltage
+  stability factors (`PowerFlowVoltageStabilityFactors__ACBus`) are available as
+  auxiliary variables after solving
 
 **Step 2:** Add quadratic loss approximation
 - Losses modeled as: Loss = Σₖ Rₖ × (Iₖ)²

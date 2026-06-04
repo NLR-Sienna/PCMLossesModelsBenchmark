@@ -40,7 +40,8 @@ function run_lossless_model(
     # Extract results
     res = OptimizationProblemResults(model)
 
-    # Re-optimize to ensure fresh solution (workaround for result extraction)
+    # PSI clears JuMP solution values after solve!; calling optimize! directly on the
+    # JuMP model restores them so that JuMP.value.(expr) returns correct values.
     JuMP.optimize!(model.internal.container.JuMPmodel)
 
     # Extract net injection values at each bus for loss calculation
@@ -105,7 +106,8 @@ function run_linear_loss_model(
     # Extract results
     res = OptimizationProblemResults(model)
 
-    # Re-optimize to ensure fresh solution (workaround for result extraction)
+    # PSI clears JuMP solution values after solve!; calling optimize! directly on the
+    # JuMP model restores them so that JuMP.value.(expr) returns correct values.
     JuMP.optimize!(model.internal.container.JuMPmodel)
 
     # Extract updated injection values for convergence checking and next iteration

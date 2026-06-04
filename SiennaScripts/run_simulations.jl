@@ -78,7 +78,8 @@ function run_uc_ed_lossless_simulation(
     # Execute the full simulation sequence
     execute!(sim)
 
-    # Re-optimize both models to ensure fresh solution (workaround for result extraction)
+    # PSI clears JuMP solution values after execute!; calling optimize! directly on each
+    # JuMP model restores them so that JuMP.value.(expr) returns correct values.
     optimize!(uc.JuMPmodel)
     optimize!(ed.JuMPmodel)
 
@@ -110,6 +111,33 @@ function run_uc_ed_lossless_simulation(
     return sim, sim_res, injection_old_uc, injection_old_ed
 end
 
+"""
+    run_uc_ed_acopf_simulation(
+        sys_uc::PSY.System,
+        sys_ed::PSY.System;
+        ...
+    ) -> Tuple{Simulation, SimulationResults, Array}
+
+Run a cascaded UC+ED simulation where the ED stage uses an AC optimal power flow
+formulation rather than a PTDF-based approximation.
+
+The UC stage uses a lossless PTDF formulation (MILP). The ED stage solves an NLP
+with full AC network constraints, providing accurate nodal voltages and branch flows.
+
+# Arguments
+- `sys_uc::PSY.System`: System for the Unit Commitment stage.
+- `sys_ed::PSY.System`: System for the Economic Dispatch (ACOPF) stage.
+- `uc_models`: Device models for UC (default: `DEFAULT_UC_MODELS`).
+- `ed_models`: Device models for ED (default: `DEFAULT_ED_MODELS`).
+- `uc_optimizer`: Optimizer for UC (default: `DEFAULT_MILP_OPTIMIZER`).
+- `ed_optimizer`: Optimizer for ED NLP (default: `DEFAULT_NLP_OPTIMIZER`).
+- `ptdf_uc`: Pre-computed PTDF matrix for UC (computed from `sys_uc` if `nothing`).
+- `ptdf_ed`: Pre-computed PTDF matrix for ED (computed from `sys_ed` if `nothing`).
+
+# Returns
+- `(sim, sim_res, injection_old_uc)`: executed `Simulation`, `SimulationResults`,
+  and UC-stage bus injection array (for use as a warm-start in iterative methods).
+"""
 function run_uc_ed_acopf_simulation(
     sys_uc::PSY.System,
     sys_ed::PSY.System;
@@ -151,7 +179,8 @@ function run_uc_ed_acopf_simulation(
     # Execute the full simulation sequence
     execute!(sim)
 
-    # Re-optimize both models to ensure fresh solution (workaround for result extraction)
+    # PSI clears JuMP solution values after execute!; calling optimize! directly on the
+    # JuMP model restores them so that JuMP.value.(expr) returns correct values.
     optimize!(uc.JuMPmodel)
 
     # Extract bus injection values for both stages (Generation - Demand at each bus)
@@ -282,7 +311,8 @@ function run_uc_ed_quadratic_loss_simulation(
     # Execute the full simulation sequence with loss constraints
     execute!(sim)
 
-    # Re-optimize both models to ensure fresh solution (workaround for result extraction)
+    # PSI clears JuMP solution values after execute!; calling optimize! directly on each
+    # JuMP model restores them so that JuMP.value.(expr) returns correct values.
     optimize!(uc.JuMPmodel)
     optimize!(ed.JuMPmodel)
 
@@ -498,6 +528,28 @@ function run_iterative_uc_ed_quadratic_loss_simulation(
     end
 end
 
+"""
+    run_uc_linear_loss_ed_acopf_simulation(
+        sys_uc, sys_ed, res_old_uc, res_old_ed, injection_old_uc; ...
+    ) -> Tuple{Simulation, SimulationResults, Array}
+
+Run one UC+ED iteration using linearised losses in UC and an AC optimal power flow
+in the ED stage, with both linearisations anchored to a previous operating point.
+
+# Arguments
+- `sys_uc::PSY.System`: System for the Unit Commitment stage.
+- `sys_ed::PSY.System`: System for the Economic Dispatch (ACOPF) stage.
+- `res_old_uc`: Previous iteration's UC `OptimizationProblemResults` (used to build
+  the linear loss approximation for UC).
+- `res_old_ed`: Previous iteration's ED results (used to anchor the ED linearisation).
+- `injection_old_uc`: Previous iteration's UC bus injection array (p.u., all time-steps).
+- `uc_models`, `ed_models`, `uc_optimizer`, `ed_optimizer`: see `run_uc_ed_lossless_simulation`.
+- `ptdf_uc`, `ptdf_ed`: Pre-computed PTDF matrices (computed if `nothing`).
+
+# Returns
+- `(sim, sim_res, injection_new_uc)`: executed `Simulation`, `SimulationResults`,
+  and updated UC-stage bus injection array for the next iteration.
+"""
 function run_uc_linear_loss_ed_acopf_simulation(
     sys_uc::PSY.System,
     sys_ed::PSY.System,
@@ -547,7 +599,8 @@ function run_uc_linear_loss_ed_acopf_simulation(
     # Execute the full simulation sequence with loss constraints
     execute!(sim)
 
-    # Re-optimize both models to ensure fresh solution (workaround for result extraction)
+    # PSI clears JuMP solution values after execute!; calling optimize! directly on the
+    # JuMP model restores them so that JuMP.value.(expr) returns correct values.
     optimize!(uc.JuMPmodel)
 
     # Extract updated bus injection values for convergence checking
@@ -568,6 +621,34 @@ function run_uc_linear_loss_ed_acopf_simulation(
     return sim, sim_res, injection_new_uc
 end
 
+"""
+    run_iterative_uc_linear_ed_acopf_simulation(
+        sys_uc::PSY.System,
+        sys_ed::PSY.System; ...
+    ) -> SimulationResults
+
+Solve a cascaded UC+ED simulation iteratively, using linearised losses in UC and
+a full AC optimal power flow in the ED stage, until convergence or `max_iter`.
+
+The initial operating point comes from `run_uc_ed_acopf_simulation` (lossless UC +
+ACOPF ED). Each subsequent iteration calls `run_uc_linear_loss_ed_acopf_simulation`
+with the previous solution as the linearisation anchor.
+
+Convergence is declared when the absolute change in total ED AC losses between
+successive iterations falls below `error_tol` — i.e., when re-linearising the
+losses around the new operating point no longer meaningfully shifts the dispatch.
+
+# Arguments
+- `sys_uc::PSY.System`: System for the Unit Commitment stage.
+- `sys_ed::PSY.System`: System for the Economic Dispatch (ACOPF) stage.
+- `uc_models`, `ed_models`, `uc_optimizer`, `ed_optimizer`: see `run_uc_ed_lossless_simulation`.
+- `ptdf_uc`, `ptdf_ed`: Pre-computed PTDF matrices (computed if `nothing`).
+- `max_iter`: Maximum number of iterations (default: `5`).
+- `error_tol`: Convergence threshold on absolute total-loss change (default: `1e-1` MW).
+
+# Returns
+- `SimulationResults` from the final (converged or last) iteration.
+"""
 function run_iterative_uc_linear_ed_acopf_simulation(
     sys_uc::PSY.System,
     sys_ed::PSY.System;

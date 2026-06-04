@@ -32,7 +32,7 @@ The HVDC lines are required to create inter-area shortcuts that the
 optimizer can exploit, making circular flows possible.
 """
 function build_cats_system(cats_json_path::String)
-    sys = System(cats_json_path)
+    sys = System(cats_json_path; runchecks = false)
     transform_single_time_series!(sys, Hour(1), Hour(1))
     add_internal_hvdc!(sys)
     return sys

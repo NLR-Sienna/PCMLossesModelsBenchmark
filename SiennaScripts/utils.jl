@@ -14,11 +14,12 @@ Extract bus numbers from optimization results as an integer vector.
 - `res`: SimulationResults or DecisionModelResults containing power balance expressions
 
 # Returns
-- Vector of bus numbers (as integers) corresponding to the system buses
+- `Vector{Int}` of PSY bus numbers (as integers) corresponding to the system buses
 
 # Details
-Reads the ActivePowerBalance expression for AC buses and extracts bus identifiers
-from the column names, converting them from strings to integers.
+Reads `"ActivePowerBalance__ACBus"` in `TableFormat.WIDE` format via `read_expression`
+and extracts PSY bus numbers from the column names (skipping the timestamp column),
+converting them from strings to integers.
 """
 function get_bus_ax(res)
     injection =
@@ -42,7 +43,7 @@ Retrieve net active power injection at each bus across all time periods.
 
 # Details
 Net injection = Generation - Demand at each bus.
-Positive values indicate net generation, negative values indicate net load.
+Positive = net generation; negative = net load.
 """
 function get_bus_injection(res)
     injection =
@@ -69,6 +70,9 @@ Compute bus-specific loss sensitivity factors (∂Loss/∂Injection) from power 
 Loss factors represent how much total system losses change per unit change in injection.
 They are computed as 1.0 + delivery_factors, where delivery factors account for
 the marginal transmission losses. The slack bus is excluded from loss calculations.
+
+The default `slack_number = "113"` is the slack bus in the RTS-GMLC test system.
+Callers running on any other system must override this kwarg with the correct bus number.
 """
 function get_bus_loss_factors(res; slack_number = "113")
     delivery_factors = read_aux_variable(
@@ -88,6 +92,21 @@ function get_bus_loss_factors(res; slack_number = "113")
     return copy(transpose(loss_factors))
 end
 
+"""
+    get_bus_loss_factors(res::SimulationProblemResults; slack_number = "113") -> Matrix{Float64}
+
+Simulation-results overload of `get_bus_loss_factors`. Identical semantics to the base
+method but uses `read_realized_aux_variable` instead of `read_aux_variable`, which is
+required when `res` is a `SimulationProblemResults` object (e.g., from `execute!(sim)`).
+
+# Arguments
+- `res`: `PSI.SimulationProblemResults{DecisionModelSimulationResults}`
+- `slack_number`: Bus number of the slack/reference bus (default: `"113"`, the RTS-GMLC
+  slack bus; callers on other systems must override this)
+
+# Returns
+- Matrix of size (num_buses × num_timesteps) — see base method for full semantics.
+"""
 function get_bus_loss_factors(
     res::PSI.SimulationProblemResults{PowerSimulations.DecisionModelSimulationResults};
     slack_number = "113",
@@ -197,6 +216,10 @@ Retrieve voltage magnitudes at all buses from power flow results.
 # Details
 Voltage magnitudes are computed from AC power flow analysis and are typically
 close to 1.0 p.u. for well-operated systems.
+
+Requires that the model was built with `ignore_pf = false`. If power flow was
+skipped (`ignore_pf = true`), the `PowerFlowVoltageMagnitude__ACBus` aux variable
+will not exist and `read_aux_variable` will throw.
 """
 function get_power_flow_voltage_mag(res)
     pf_bus = read_aux_variable(
@@ -238,6 +261,9 @@ Compute representative voltage magnitude for each transmission arc.
 For each arc (branch), uses the maximum voltage magnitude between the two
 connected buses. This conservative approach ensures loss calculations
 account for the higher voltage conditions.
+
+Requires that the model was built with `ignore_pf = false`; delegates to
+`get_power_flow_voltage_mag`, which will throw if the AC PF aux variable is absent.
 """
 function get_power_flow_arc_voltage_mag(res, ptdf)
     bus_lookup = ptdf.lookup[1]
@@ -314,6 +340,10 @@ where:
 This formulation accounts for voltage magnitude effects on losses,
 making it more accurate than DC approximation for systems with significant
 voltage variations.
+
+Use this method when voltage profiles deviate meaningfully from 1.0 p.u. (e.g., after
+a full AC PF solve); prefer `get_DC_dLoss_dP` for the first iteration or when a
+flat-voltage approximation is acceptable.
 """
 function get_AC_dLoss_dP(res, sys)
     ptdf = PTDF(sys)
@@ -369,6 +399,10 @@ where:
 This is a simplified formulation that assumes constant voltage magnitudes
 (typically 1.0 p.u.). It's computationally faster but less accurate than
 AC loss factors for systems with significant voltage variations.
+
+Use this method for the first iteration of a loss-approximation loop or whenever a
+flat-voltage assumption is acceptable; switch to `get_AC_dLoss_dP` once AC PF voltages
+are available for systems where voltage varies significantly.
 """
 function get_DC_dLoss_dP(res, sys)
     ptdf = PTDF(sys)
@@ -1038,8 +1072,8 @@ end
 Compute convergence metric for iterative loss approximation algorithms.
 
 # Arguments
-- `res_old`: Results from previous iteration
-- `res_new`: Results from current iteration
+- `res_old`: Results from the previous iterative loss approximation solve
+- `res_new`: Results from the current iterative loss approximation solve
 
 # Returns
 - Maximum infinity norm of changes across all generator types (in MW)
@@ -1059,6 +1093,9 @@ where ‖·‖_∞ is the maximum absolute difference across all generators and 
 - Small error (< 1e-3 MW): Dispatch has stabilized, loss approximation converged
 - Large error: Significant redispatch occurred, need more iterations
 - Increasing error: Possible divergence, check model formulation
+
+In practice, a maximum dispatch change of 0.1–1 MW is a typical tolerance for
+declaring convergence in iterative loss-approximation workflows.
 
 **Why This Metric?**
 Generator output changes indicate whether the loss approximation has stabilized.

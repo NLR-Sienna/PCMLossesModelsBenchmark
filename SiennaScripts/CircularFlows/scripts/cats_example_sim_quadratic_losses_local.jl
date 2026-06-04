@@ -40,11 +40,33 @@ cats_json = joinpath(this_path, "..", "..", "..", "Systems", "CATS", "CATS_saved
 highs_milp = PSI.optimizer_with_attributes(HiGHS.Optimizer, "mip_rel_gap" => 0.01)
 ipopt_nlp  = PSI.optimizer_with_attributes(Ipopt.Optimizer, "print_level" => 3)
 
+"""
+    detect_cats_circular_flows_sim_quad(
+        sys;
+        time_step::Int = 1
+    ) -> Vector{CircularFlow}
+
+Build and execute a cascaded UC+ED simulation for the CATS system using PTDF-based
+graph construction, then detect circular flows in the ED solution.
+
+`ignore_pf_uc = true` and `ignore_pf_ed = true` are both hardcoded: neither stage
+runs the post-solve AC power flow, so graph construction always uses PTDF × bus-injection
+estimates rather than actual AC branch flows.
+
+# Arguments
+- `sys`: `PSY.System` to optimise (modified in-place by HVDC additions upstream).
+- `time_step`: which time-step of the simulation to analyse (default: `1`).
+
+# Returns
+- `Vector{CircularFlow}` — detected closed loops and their branch flows.
+"""
 function detect_cats_circular_flows_sim_quad(sys; time_step::Int = 1)
     ptdf = PTDF(sys)
 
     # Build UC (lossless, HiGHS) + ED (quadratic losses, Ipopt) simulation.
     # SemiContinuousFeedforward propagates UC on/off to ED — no manual binary fixing.
+    # ignore_pf_uc and ignore_pf_ed are both true: neither stage runs post-solve AC power
+    # flow, so flows are inferred via PTDF × injections rather than AC branch flows.
     sim = build_uc_ed_simulation_with_ed_quadratic_losses_no_voltage(
         sys, sys;
         uc_models    = CATS_UC_MODELS,
@@ -103,3 +125,8 @@ println("  Cycles found: $(length(C_b))")
 for (i, c) in enumerate(C_b)
     println("  Cycle $i: buses=$(c.bus_numbers), min_flow=$(minimum(c.branch_flows)) MW")
 end
+
+### Double check if there is congestion when having circular flows in positive renewable cost scenario
+### Avoid re-running optimize to get the PTDF injections.
+### Filter lines with losses so don't include every line in the model ###
+### Try to run CATS with full OPF in ED ###

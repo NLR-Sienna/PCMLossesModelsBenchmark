@@ -38,6 +38,21 @@ function read_hvdc_flow_variables(res, read_fn::Function = read_variable)::Dict{
     return out
 end
 
+"""
+    CircularFlow
+
+A single detected loop-flow (circular flow) in the power network.
+
+Fields
+------
+- `buses`        : Internal graph node indices (1..N) for each bus in the cycle.
+                   These are NOT PSY bus numbers; use `bus_numbers` for human-readable IDs.
+- `bus_numbers`  : PSY bus numbers corresponding to each node in `buses`.
+- `branches`     : Names of the AC branches (and any HVDC links) that form the cycle,
+                   in the same traversal order as `buses`.
+- `branch_flows` : MW flow magnitude on each branch in `branches` (always positive;
+                   direction is encoded by the edge orientation in the graph).
+"""
 struct CircularFlow
     buses::Vector{Int64}        # internal graph node indices
     bus_numbers::Vector{Int64}  # PSY bus numbers
@@ -47,20 +62,23 @@ end
 
 # ── Private API helpers ────────────────────────────────────────────────────────
 
-# Returns Dict{bus_number => internal_index} from PSY5 PowerFlowData.
+# Returns Dict{bus_number => internal_index} built from the union of all from/to bus numbers
+# appearing in the arc admittance axes of a PowerFlowData object.
 function _get_bus_lookup(data)::Dict{Int64, Int64}
     arcs = data.power_network_matrix.arc_admittance_from_to.axes[1]
     all_bus_numbers = sort!(unique(vcat(first.(arcs), last.(arcs))))
     return Dict{Int64, Int64}(bn => i for (i, bn) in enumerate(all_bus_numbers))
 end
 
-# Returns arc iterator as (from_internal_idx, to_internal_idx) pairs.
+# Returns a Vector of (from_internal_idx, to_internal_idx) tuples, one per arc,
+# with bus numbers translated to internal graph indices via bus_lookup.
 function _get_arc_iter(data, bus_lookup::Dict{Int64, Int64})
     arcs = data.power_network_matrix.arc_admittance_from_to.axes[1]
     return Tuple{Int64, Int64}[(bus_lookup[first(a)], bus_lookup[last(a)]) for a in arcs]
 end
 
-# Returns (flows_from_to, flows_to_from) in MW.
+# Returns (flows_from_to, flows_to_from) in MW for the given time_step and flow_type
+# (:active or :reactive), scaling per-unit PowerFlowData values by base_power.
 function _get_flows(data, time_step::Int, flow_type::Symbol, base_power::Float64)
     if flow_type == :active
         return (data.arc_active_power_flow_from_to[:, time_step] .* base_power,
@@ -71,8 +89,9 @@ function _get_flows(data, time_step::Int, flow_type::Symbol, base_power::Float64
     end
 end
 
-# Shared HVDC edge insertion: adds one directed edge per HVDC line.
-# get_flow is a closure that returns the from-to flow in per-unit for a given HVDC component.
+# Shared HVDC edge insertion: iterates over all TwoTerminalGenericHVDCLine components in sys
+# and adds one directed edge per line. `get_flow` must be a closure accepting an HVDC component
+# and returning its from-to flow in per-unit (positive = power flows from→to bus).
 function _add_hvdc_edges_inner!(
     G::SWG.SimpleWeightedDiGraph,
     sys::PSY.System,
@@ -100,8 +119,11 @@ end
 Build a directed flow graph from AC power flow data.
 
 Each arc is oriented in the direction of net positive flow. Graph nodes are
-internal sequential indices (1..N_buses); use `_get_bus_lookup` to map back to
-bus numbers. Works with both the old and new PowerFlowData API variants.
+**internal sequential indices (1..N_buses)** — they are NOT PSY bus numbers.
+Callers must use `_get_bus_lookup(data)` to obtain the mapping from PSY bus
+numbers to these internal indices (and vice versa) before interpreting node IDs.
+Edge weights are in MW (i.e., `base_power × per-unit flow`).
+Works with both the old and new PowerFlowData API variants.
 """
 function build_graph(
     data;
@@ -144,6 +166,8 @@ end
 
 RTS-style: add HVDC edges from a PSI `read_variables` result Dict.
 Handles both `FlowActivePowerVariable__...` and `FlowActivePowerFromToVariable__...` keys.
+`res_vars` is typically produced by `read_hvdc_flow_variables(res)`, which
+selects only the HVDC-relevant keys from the PSI results container.
 """
 function add_hvdc_edges!(
     G::SWG.SimpleWeightedDiGraph,
@@ -198,6 +222,8 @@ end
 CATS-style: add HVDC edges from an explicit long-format DataFrame with columns
 `DateTime`, `name`, `value`. Used when the HVDC result is extracted separately
 from the simulation results (as in the CATS workflow).
+`time_step` is a `DateTime` (not an Int) because it is used to filter rows of
+the long-format DataFrame by their `DateTime` column value.
 """
 function add_hvdc_edges!(
     G::SWG.SimpleWeightedDiGraph,
@@ -220,7 +246,10 @@ end
     find_circular_flows(G, data, branches) -> Vector{CircularFlow}
 
 Enumerate all simple directed cycles in G and return those that correspond
-to real AC branch loops. Uses `simplecycles` from Graphs.jl.
+to real AC branch loops. Uses `simplecycles` (Johnson's algorithm,
+O((V+E)(C+1)) where C is the number of simple cycles) from Graphs.jl.
+For large, highly meshed grids the number of cycles can be enormous;
+callers may want to pre-filter the graph or limit system size before calling.
 """
 function find_circular_flows(
     G::SWG.SimpleWeightedDiGraph,
@@ -244,8 +273,10 @@ Build a directed flow graph from DC branch flows computed via PTDF.
 `bus_injection_pu` must be a plain vector of per-unit bus injections in the same
 bus ordering as ptdf (i.e., position k corresponds to ptdf[arc, k]).
 
-Use this when the AC power flow evaluation fails to converge; the PTDF flows
-are exact for the lossless DC model the optimizer solved against.
+Use this when AC power flow was not run (e.g., `ignore_pf_ed = true`), or as a
+cross-check against the AC-flow-based graph. Branch flows are computed as
+`PTDF × bus_injection_pu × base_power`, which is exact for the lossless DC model
+the optimizer solved against.
 """
 function build_graph_from_ptdf(
     bus_injection_pu::AbstractVector{Float64},
@@ -282,10 +313,17 @@ end
 
 Build a directed flow graph from actual AC power flow branch flows stored in PSI
 aux variables after an ED solve with `power_flow_evaluation` enabled.
+These aux variables are only present when the model was built with
+`ignore_pf_ed = false`; calling this function on results from an
+`ignore_pf_ed = true` solve will error.
 
 Reads `PowerFlowBranchActivePowerFromTo/ToFrom__Line` and
 `PowerFlowBranchActivePowerFromTo/ToFrom__TapTransformer` (in MW, already scaled)
 and applies the same direction-selection logic as `build_graph`.
+The TapTransformer reads are wrapped in a try/catch so that systems without
+transformer components degrade gracefully (empty DataFrames are substituted).
+Branches whose names are not found in `sys` (e.g., filtered or renamed components)
+are silently skipped.
 
 Returns `(G, bus_lookup)` with the same signature as `build_graph_from_ptdf`
 so `add_hvdc_edges!(G, sys, res_vars, bus_lookup)` and
@@ -411,8 +449,12 @@ end
 """
     find_circular_flows(G, bus_lookup, branches) -> Vector{CircularFlow}
 
-Overload for graphs built with `build_graph_from_ptdf`. Accepts `bus_lookup`
+Overload for graphs built with `build_graph_from_ptdf` or
+`build_graph_from_pf_aux_variables`. Accepts `bus_lookup`
 (Dict{bus_number => internal_index}) directly instead of PowerFlowData.
+Uses `simplecycles` (Johnson's algorithm, O((V+E)(C+1)) where C is the number
+of simple cycles); callers should guard against running this on large meshed grids
+where C may be very large.
 """
 function find_circular_flows(
     G::SWG.SimpleWeightedDiGraph,
