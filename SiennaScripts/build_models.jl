@@ -91,7 +91,7 @@ function make_ptdf_model_without_losses(
                 PTDF_matrix = ptdf_used,
                 use_slacks = true,
                 duals = [CopperPlateBalanceConstraint],
-                power_flow_evaluation = PowerFlows.ACPowerFlow(; calculate_loss_factors = true),
+                power_flow_evaluation = PowerFlows.ACPowerFlow(; calculate_loss_factors = true, calculate_voltage_stability_factors = true),
             ),
         )
     else
@@ -145,7 +145,7 @@ function make_acopf_model(
             NetworkModel(
                 ACPPowerModel;
                 use_slacks = true,
-                power_flow_evaluation = PowerFlows.ACPowerFlow(; calculate_loss_factors = true),
+                power_flow_evaluation = PowerFlows.ACPowerFlow(; calculate_loss_factors = true, calculate_voltage_stability_factors = true),
             ),
         )
     else
