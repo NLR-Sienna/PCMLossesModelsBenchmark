@@ -53,7 +53,8 @@ function detect_cats_circular_flows_sim_quad(sys; time_step::Int = 1)
         ed_optimizer = ipopt_nlp,
         ptdf_uc      = ptdf,
         ptdf_ed      = ptdf,
-        ignore_pf    = true,
+        ignore_pf_uc = true,
+        ignore_pf_ed = true,
     )
 
     ed_container = sim.models.decision_models[2].internal.container
