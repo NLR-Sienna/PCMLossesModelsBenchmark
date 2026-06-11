@@ -76,3 +76,69 @@ function build_rts_model_with_quadratic_losses(sys)
     update_copperplate_quadratic_loss_approximation_no_voltage!(model, sys, ptdf)
     return model
 end
+
+"""
+    build_rts_uc_models_hv(; voltage_threshold = 100.0) -> Dict
+
+Return UC device models for RTS where `Line` and `TapTransformer` carry a
+`filter_function` that excludes branches whose **from-bus** base voltage is at
+or below `voltage_threshold` kV from the `NetworkFlowConstraint`.
+
+RTS uses `TapTransformer` (not `Transformer2W` as in CATS).
+The full system PTDF must still be passed for correct loss accounting.
+"""
+function build_rts_uc_models_hv(; voltage_threshold::Float64 = 100.0)
+    filter_fn = x -> PSY.get_base_voltage(PSY.get_from(PSY.get_arc(x))) > voltage_threshold
+    return Dict(
+        Line              => DeviceModel(Line, StaticBranchBounds;
+                                 attributes = Dict("filter_function" => filter_fn)),
+        TapTransformer    => DeviceModel(TapTransformer, StaticBranchBounds;
+                                 attributes = Dict("filter_function" => filter_fn)),
+        ThermalStandard            => ThermalBasicUnitCommitment,
+        PowerLoad                  => StaticPowerLoad,
+        RenewableDispatch          => RenewableFullDispatch,
+        HydroDispatch              => HydroDispatchRunOfRiver,
+        TwoTerminalGenericHVDCLine => HVDCTwoTerminalLossless,
+    )
+end
+
+"""
+    build_rts_ed_models_hv(; voltage_threshold = 100.0) -> Dict
+
+Return ED device models for RTS with the same LV branch filter as
+`build_rts_uc_models_hv`.
+"""
+function build_rts_ed_models_hv(; voltage_threshold::Float64 = 100.0)
+    filter_fn = x -> PSY.get_base_voltage(PSY.get_from(PSY.get_arc(x))) > voltage_threshold
+    return Dict(
+        Line              => DeviceModel(Line, StaticBranchBounds;
+                                 attributes = Dict("filter_function" => filter_fn)),
+        TapTransformer    => DeviceModel(TapTransformer, StaticBranchBounds;
+                                 attributes = Dict("filter_function" => filter_fn)),
+        ThermalStandard            => ThermalBasicDispatch,
+        PowerLoad                  => StaticPowerLoad,
+        RenewableDispatch          => RenewableFullDispatch,
+        HydroDispatch              => HydroDispatchRunOfRiver,
+        TwoTerminalGenericHVDCLine => HVDCTwoTerminalLossless,
+    )
+end
+
+"""
+    build_rts_ed_models_acopf() -> Dict
+
+Return ED device models for the RTS system using `ACPPowerModel`.
+All branches are modeled with `StaticBranchUnbounded` — no `filter_function` —
+because `ACPPowerModel` must see every branch for AC feasibility.
+RTS uses `TapTransformer` (not `Transformer2W` as in CATS).
+"""
+function build_rts_ed_models_acopf()
+    return Dict(
+        Line                       => StaticBranchUnbounded,
+        TapTransformer             => StaticBranchUnbounded,
+        ThermalStandard            => ThermalBasicDispatch,
+        PowerLoad                  => StaticPowerLoad,
+        RenewableDispatch          => RenewableFullDispatch,
+        HydroDispatch              => HydroDispatchRunOfRiver,
+        TwoTerminalGenericHVDCLine => HVDCTwoTerminalLossless,
+    )
+end

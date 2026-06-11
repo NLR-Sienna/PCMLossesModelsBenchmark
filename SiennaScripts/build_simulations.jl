@@ -363,6 +363,10 @@ accurate losses.
 - `ptdf_uc`: Pre-computed PTDF matrix for UC (default: nothing, computed if needed)
 - `ptdf_ed`: Pre-computed PTDF matrix for ED; passed to `make_acopf_model` for
   any PTDF-based auxiliary computations (default: nothing, computed if needed)
+- `ignore_pf_ed::Bool`: When `true`, the ED stage runs as a pure `ACPPowerModel`
+  with no post-solve AC power flow; branch flows are read from optimization variables.
+  When `false` (default), an AC power flow runs after each ED solve, populating
+  PF aux variables and making voltage stability factors available.
 - `initial_time`: Simulation start timestamp (default: `DateTime("2019-01-01T00:00:00")`)
 
 # Returns
@@ -377,8 +381,7 @@ accurate losses.
 **Stage 2 – Economic Dispatch (ED):**
 - Full AC OPF (`make_acopf_model`); voltage magnitudes and angles are
   optimization variables
-- Post-solve AC power flow is enabled (`ignore_pf = false`), populating
-  aux variables after each ED solve
+- Post-solve AC power flow behaviour is controlled by `ignore_pf_ed` (default `false`)
 - Binaries fixed via SemiContinuousFeedforward from UC
 
 # See Also
@@ -396,6 +399,7 @@ function build_uc_ed_simulation_with_acopf(
     ed_optimizer = DEFAULT_NLP_OPTIMIZER,
     ptdf_uc = nothing,
     ptdf_ed = nothing,
+    ignore_pf_ed::Bool = false,
     initial_time = DateTime("2019-01-01T00:00:00"),
 )
     # Use provided PTDF matrices or compute them if not provided
@@ -427,7 +431,7 @@ function build_uc_ed_simulation_with_acopf(
         optimizer = ed_optimizer,
         ptdf = ptdf_ed_used,
         name = "ED",
-        ignore_pf = false,
+        ignore_pf = ignore_pf_ed,
     )
 
     # Package models into simulation structure

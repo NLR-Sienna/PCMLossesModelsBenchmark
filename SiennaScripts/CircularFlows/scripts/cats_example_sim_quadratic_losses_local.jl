@@ -63,6 +63,12 @@ estimates rather than actual AC branch flows.
 function detect_cats_circular_flows_sim_quad(sys; time_step::Int = 1)
     ptdf = PTDF(sys)
 
+    # filt_func(x) = get_base_voltage(get_from(get_arc(x))) > 325.0
+    # Filter functions are passed as attributes to set_device_model
+    # example: set_device_model!(template_uc, DeviceModel(Line, StaticBranch; attributes = Dict("filter_function" => x -> get_base_voltage(get_from(get_arc(x))) > 100)))
+    # Only include high-voltage branches in the graph, so we don't find trivial cycles with low-voltage distribution lines.
+
+
     # Build UC (lossless, HiGHS) + ED (quadratic losses, Ipopt) simulation.
     # SemiContinuousFeedforward propagates UC on/off to ED — no manual binary fixing.
     # ignore_pf_uc and ignore_pf_ed are both true: neither stage runs post-solve AC power

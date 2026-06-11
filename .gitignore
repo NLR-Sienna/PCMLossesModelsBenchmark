@@ -33,6 +33,8 @@ docs/site/
 .vscode
 *.h5
 data
+docs/superpowers/plans
+Identifycircularflow/
 ################################################################################
 #                              Operating systems                               #
 ################################################################################
@@ -124,3 +126,8 @@ Manifest.toml
 
 ## Ignore California Test System
 CATS-CaliforniaTestSystem
+
+# Claude
+hooks
+settings.*.json
+settings.json

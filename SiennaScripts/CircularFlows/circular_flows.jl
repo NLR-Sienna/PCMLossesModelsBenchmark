@@ -317,11 +317,12 @@ These aux variables are only present when the model was built with
 `ignore_pf_ed = false`; calling this function on results from an
 `ignore_pf_ed = true` solve will error.
 
-Reads `PowerFlowBranchActivePowerFromTo/ToFrom__Line` and
-`PowerFlowBranchActivePowerFromTo/ToFrom__TapTransformer` (in MW, already scaled)
-and applies the same direction-selection logic as `build_graph`.
-The TapTransformer reads are wrapped in a try/catch so that systems without
-transformer components degrade gracefully (empty DataFrames are substituted).
+Reads `PowerFlowBranchActivePowerFromTo/ToFrom__Line`,
+`PowerFlowBranchActivePowerFromTo/ToFrom__TapTransformer` (RTS), and
+`PowerFlowBranchActivePowerFromTo/ToFrom__Transformer2W` (CATS) — all in MW,
+already scaled — and applies the same direction-selection logic as `build_graph`.
+Both transformer reads are wrapped in try/catch so systems that lack a given
+transformer type degrade gracefully (empty DataFrames are substituted).
 Branches whose names are not found in `sys` (e.g., filtered or renamed components)
 are silently skipped.
 
@@ -348,15 +349,28 @@ function build_graph_from_pf_aux_variables(
         tap_ft_df = DataFrame()
         tap_tf_df = DataFrame()
     end
+    local t2w_ft_df, t2w_tf_df
+    try
+        t2w_ft_df = read_realized_aux_variable(
+            res_ed, "PowerFlowBranchActivePowerFromTo__Transformer2W"; table_format = TableFormat.WIDE)
+        t2w_tf_df = read_realized_aux_variable(
+            res_ed, "PowerFlowBranchActivePowerToFrom__Transformer2W"; table_format = TableFormat.WIDE)
+    catch
+        t2w_ft_df = DataFrame()
+        t2w_tf_df = DataFrame()
+    end
 
     line_names = names(line_ft_df)[2:end]
     tap_names  = isempty(tap_ft_df) ? String[] : names(tap_ft_df)[2:end]
+    t2w_names  = isempty(t2w_ft_df) ? String[] : names(t2w_ft_df)[2:end]
 
     all_bus_numbers = sort!(unique(Int64[
-        [PSY.get_number(PSY.get_from_bus(PSY.get_component(PSY.Line, sys, n))) for n in line_names];
-        [PSY.get_number(PSY.get_to_bus(PSY.get_component(PSY.Line, sys, n)))   for n in line_names];
+        [PSY.get_number(PSY.get_from_bus(PSY.get_component(PSY.Line, sys, n)))           for n in line_names];
+        [PSY.get_number(PSY.get_to_bus(PSY.get_component(PSY.Line, sys, n)))             for n in line_names];
         [PSY.get_number(PSY.get_from_bus(PSY.get_component(PSY.TapTransformer, sys, n))) for n in tap_names];
         [PSY.get_number(PSY.get_to_bus(PSY.get_component(PSY.TapTransformer, sys, n)))   for n in tap_names];
+        [PSY.get_number(PSY.get_from_bus(PSY.get_component(PSY.Transformer2W, sys, n)))  for n in t2w_names];
+        [PSY.get_number(PSY.get_to_bus(PSY.get_component(PSY.Transformer2W, sys, n)))    for n in t2w_names];
     ]))
     bus_lookup = Dict{Int64, Int64}(bn => i for (i, bn) in enumerate(all_bus_numbers))
 
@@ -398,6 +412,174 @@ function build_graph_from_pf_aux_variables(
         _push_edge!(
             Float64(tap_ft_df[time_step, name]),
             Float64(tap_tf_df[time_step, name]),
+            PSY.get_number(PSY.get_from_bus(branch)),
+            PSY.get_number(PSY.get_to_bus(branch)),
+        )
+    end
+
+    for name in t2w_names
+        branch = PSY.get_component(PSY.Transformer2W, sys, name)
+        isnothing(branch) && continue
+        _push_edge!(
+            Float64(t2w_ft_df[time_step, name]),
+            Float64(t2w_tf_df[time_step, name]),
+            PSY.get_number(PSY.get_from_bus(branch)),
+            PSY.get_number(PSY.get_to_bus(branch)),
+        )
+    end
+
+    return SWG.SimpleWeightedDiGraph(src, dst, w), bus_lookup
+end
+
+"""
+    build_graph_from_acopf_variables(res_ed, sys; time_step) -> (G, bus_lookup)
+
+Build a directed flow graph from `ACPPowerModel` optimization variables.
+Use this when the ED was built with `ignore_pf_ed = true` (no post-solve power flow).
+For the post-solve-PF mode use `build_graph_from_pf_aux_variables` instead.
+
+Reads `FlowActivePowerFromToVariable__Line` and `FlowActivePowerToFromVariable__Line`
+(per-unit), plus optional transformer variables for CATS (`__Transformer2W`) and
+RTS (`__TapTransformer`), and scales all flows to MW using `sys` base power.
+
+Returns `(G, bus_lookup)` with the same signature as `build_graph_from_ptdf`
+so `add_hvdc_edges!` and `find_circular_flows` can be called unchanged.
+"""
+function build_graph_from_acopf_variables(
+    res_ed,
+    sys::PSY.System;
+    time_step::Int = 1,
+)
+    base_power = PSY.get_base_power(sys)
+    ptdf = PTDF(sys)  # for bus_lookup construction only; flows come from variables, not PTDF
+    PNM.populate_branch_maps_by_type!(ptdf.network_reduction_data)
+
+    line_ft_df = read_realized_variable(
+        res_ed, "FlowActivePowerFromToVariable__Line"; table_format = TableFormat.WIDE)
+    line_tf_df = read_realized_variable(
+        res_ed, "FlowActivePowerToFromVariable__Line"; table_format = TableFormat.WIDE)
+
+    local t2w_ft_df, t2w_tf_df
+    try
+        t2w_ft_df = read_realized_variable(
+            res_ed, "FlowActivePowerFromToVariable__Transformer2W"; table_format = TableFormat.WIDE)
+        t2w_tf_df = read_realized_variable(
+            res_ed, "FlowActivePowerToFromVariable__Transformer2W"; table_format = TableFormat.WIDE)
+    catch
+        t2w_ft_df = DataFrame()
+        t2w_tf_df = DataFrame()
+    end
+
+    local tap_ft_df, tap_tf_df
+    try
+        tap_ft_df = read_realized_variable(
+            res_ed, "FlowActivePowerFromToVariable__TapTransformer"; table_format = TableFormat.WIDE)
+        tap_tf_df = read_realized_variable(
+            res_ed, "FlowActivePowerToFromVariable__TapTransformer"; table_format = TableFormat.WIDE)
+    catch
+        tap_ft_df = DataFrame()
+        tap_tf_df = DataFrame()
+    end
+
+    line_names = names(line_ft_df)[2:end]
+    t2w_names  = isempty(t2w_ft_df) ? String[] : names(t2w_ft_df)[2:end]
+    tap_names  = isempty(tap_ft_df) ? String[] : names(tap_ft_df)[2:end]
+
+    # Build reverse map: aggregated variable name → [individual line names].
+    # component_to_reduction_name_map[Line] maps individual → aggregated;
+    # reverse it so aggregated variable names can be resolved to bus numbers.
+    nrd = ptdf.network_reduction_data
+    agg_to_lines = Dict{String, Vector{String}}()
+    if haskey(nrd.component_to_reduction_name_map, Line)
+        for (ind_name, agg_name) in nrd.component_to_reduction_name_map[Line]
+            push!(get!(agg_to_lines, agg_name, String[]), ind_name)
+        end
+    end
+
+    # Resolve a Line variable name (direct or aggregated) to (from_bus_no, to_bus_no).
+    # Returns nothing if unresolvable. Parallel-circuit variable names (e.g.
+    # "A33-double_circuit") are not PSY components; look up a constituent line instead.
+    function _line_endpoints(name)
+        branch = PSY.get_component(PSY.Line, sys, name)
+        !isnothing(branch) && return (PSY.get_number(PSY.get_from_bus(branch)),
+                                       PSY.get_number(PSY.get_to_bus(branch)))
+        if haskey(agg_to_lines, name)
+            rep = PSY.get_component(PSY.Line, sys, first(agg_to_lines[name]))
+            !isnothing(rep) && return (PSY.get_number(PSY.get_from_bus(rep)),
+                                        PSY.get_number(PSY.get_to_bus(rep)))
+        end
+        return nothing
+    end
+
+    line_endpoints   = filter(!isnothing, [_line_endpoints(n) for n in line_names])
+    t2w_branches     = filter(!isnothing, [PSY.get_component(PSY.Transformer2W, sys, n) for n in t2w_names])
+    t2w_from_num_bus = [PSY.get_number(PSY.get_from_bus(b)) for b in t2w_branches]
+    t2w_to_num_bus   = [PSY.get_number(PSY.get_to_bus(b))   for b in t2w_branches]
+    tap_branches     = filter(!isnothing, [PSY.get_component(PSY.TapTransformer, sys, n) for n in tap_names])
+    tap_from_num_bus = [PSY.get_number(PSY.get_from_bus(b)) for b in tap_branches]
+    tap_to_num_bus   = [PSY.get_number(PSY.get_to_bus(b))   for b in tap_branches]
+    all_bus_numbers = sort!(unique(Int64[
+        first.(line_endpoints);
+        last.(line_endpoints);
+        t2w_from_num_bus;
+        t2w_to_num_bus;
+        tap_from_num_bus;
+        tap_to_num_bus;
+    ]))
+    bus_lookup = Dict{Int64, Int64}(bn => i for (i, bn) in enumerate(all_bus_numbers))
+
+    src = Vector{Int64}()
+    dst = Vector{Int64}()
+    w   = Vector{Float64}()
+
+    function _push_edge!(flow_ft_pu, flow_tf_pu, from_no, to_no)
+        flow_ft = Float64(flow_ft_pu) * base_power
+        flow_tf = Float64(flow_tf_pu) * base_power
+        (flow_ft == 0.0 && flow_tf == 0.0) && return
+        f = bus_lookup[from_no]
+        t = bus_lookup[to_no]
+        direction_ft = true
+        if sign(flow_ft) == sign(flow_tf)
+            abs(flow_ft) < abs(flow_tf) && (direction_ft = false)
+        elseif sign(flow_ft) != 1
+            direction_ft = false
+        end
+        if direction_ft
+            push!(src, f); push!(dst, t); push!(w, flow_ft)
+        else
+            push!(src, t); push!(dst, f); push!(w, flow_tf)
+        end
+    end
+
+    for name in line_names
+        endpoints = _line_endpoints(name)
+        isnothing(endpoints) && continue
+        from_no, to_no = endpoints
+        _push_edge!(
+            line_ft_df[time_step, name],
+            line_tf_df[time_step, name],
+            from_no,
+            to_no,
+        )
+    end
+
+    for name in t2w_names
+        branch = PSY.get_component(PSY.Transformer2W, sys, name)
+        isnothing(branch) && continue
+        _push_edge!(
+            t2w_ft_df[time_step, name],
+            t2w_tf_df[time_step, name],
+            PSY.get_number(PSY.get_from_bus(branch)),
+            PSY.get_number(PSY.get_to_bus(branch)),
+        )
+    end
+
+    for name in tap_names
+        branch = PSY.get_component(PSY.TapTransformer, sys, name)
+        isnothing(branch) && continue
+        _push_edge!(
+            tap_ft_df[time_step, name],
+            tap_tf_df[time_step, name],
             PSY.get_number(PSY.get_from_bus(branch)),
             PSY.get_number(PSY.get_to_bus(branch)),
         )

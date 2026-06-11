@@ -111,7 +111,11 @@ function make_ptdf_model_without_losses(
 
     # Set device models for all system components
     for (device_type, model) in device_models
-        set_device_model!(template_uc, device_type, model)
+        if model isa PSI.DeviceModel
+            set_device_model!(template_uc, model)
+        else
+            set_device_model!(template_uc, DeviceModel(device_type, model))
+        end
     end
 
     # Create the decision model with hourly resolution
@@ -188,7 +192,11 @@ function make_acopf_model(
 
     # Set device models for all system components
     for (device_type, model) in device_models
-        set_device_model!(template_uc, device_type, model)
+        if model isa PSI.DeviceModel
+            set_device_model!(template_uc, model)
+        else
+            set_device_model!(template_uc, DeviceModel(device_type, model))
+        end
     end
 
     # Create the decision model with hourly resolution
@@ -803,6 +811,12 @@ function update_copperplate_quadratic_loss_approximation_no_voltage_untracked!(
     bus_ax    = axes(injection, 1)
     bus_length = length(bus_ax)
 
+    # Build explicit per-PSI-bus → PTDF column mapping.
+    # Guards against positional misalignment when a reduced PTDF (built from a
+    # branch-filtered system) has a different bus-column ordering than PSI's
+    # ActivePowerBalance axis.  When the full PTDF is used, ptdf_col[j] == j.
+    ptdf_col = get_ptdf_bus_column_for_psi_bus(bus_ax, ptdf, sys)
+
     jump_model = PSI.get_jump_model(container)
 
     for t in time_steps
@@ -816,7 +830,8 @@ function update_copperplate_quadratic_loss_approximation_no_voltage_untracked!(
         # loss_var = -Σ_k R_k * (Σ_j PTDF_kj * P_j)^2
         JuMP.@constraint(jump_model,
             loss_var == -sum(
-                R[k] * (sum(ptdf[k, j] * injection[bus_ax[j], t] for j in 1:bus_length))^2
+                R[k] * (sum(ptdf[k, ptdf_col[j]] * injection[bus_ax[j], t]
+                            for j in 1:bus_length))^2
                 for k in 1:arcs_length
             )
         )

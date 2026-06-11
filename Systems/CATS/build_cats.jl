@@ -22,6 +22,55 @@ const CATS_ED_MODELS = Dict(
 )
 
 """
+    build_cats_uc_models_hv(; voltage_threshold = 100.0) -> Dict
+
+Return UC device models for CATS where `Line` and `Transformer2W` carry a
+`filter_function` that excludes branches whose **from-bus** base voltage is at
+or below `voltage_threshold` kV from the `NetworkFlowConstraint`.
+
+The full system PTDF must still be passed to the PSI `NetworkModel`; this filter
+only removes the per-branch flow-limit constraints for LV branches — it does NOT
+remove their contribution to the quadratic loss term.
+"""
+function build_cats_uc_models_hv(; voltage_threshold::Float64 = 100.0)
+    filter_fn = x -> PSY.get_base_voltage(PSY.get_from(PSY.get_arc(x))) > voltage_threshold
+    return Dict(
+        Line          => DeviceModel(Line, StaticBranchUnbounded;
+                             attributes = Dict("filter_function" => filter_fn)),
+        Transformer2W => DeviceModel(Transformer2W, StaticBranchUnbounded;
+                             attributes = Dict("filter_function" => filter_fn)),
+        ThermalStandard            => ThermalBasicUnitCommitment,
+        PowerLoad                  => StaticPowerLoad,
+        RenewableDispatch          => RenewableFullDispatch,
+        HydroDispatch              => HydroDispatchRunOfRiver,
+        TwoTerminalGenericHVDCLine => HVDCTwoTerminalLossless,
+    )
+end
+
+"""
+    build_cats_ed_models_hv(; voltage_threshold = 100.0) -> Dict
+
+Return ED device models for CATS with the same LV branch filter as
+`build_cats_uc_models_hv`. Includes `SynchronousCondenser` which is
+present only in the CATS ED model.
+"""
+function build_cats_ed_models_hv(; voltage_threshold::Float64 = 100.0)
+    filter_fn = x -> PSY.get_base_voltage(PSY.get_from(PSY.get_arc(x))) > voltage_threshold
+    return Dict(
+        Line          => DeviceModel(Line, StaticBranchUnbounded;
+                             attributes = Dict("filter_function" => filter_fn)),
+        Transformer2W => DeviceModel(Transformer2W, StaticBranchUnbounded;
+                             attributes = Dict("filter_function" => filter_fn)),
+        ThermalStandard            => ThermalBasicDispatch,
+        PowerLoad                  => StaticPowerLoad,
+        RenewableDispatch          => RenewableFullDispatch,
+        HydroDispatch              => HydroDispatchRunOfRiver,
+        SynchronousCondenser       => SynchronousCondenserBasicDispatch,
+        TwoTerminalGenericHVDCLine => HVDCTwoTerminalLossless,
+    )
+end
+
+"""
     build_cats_system(cats_json_path) -> System
 
 Load the CATS system from the saved JSON, add two synthetic HVDC links
@@ -53,4 +102,25 @@ function set_cats_renewable_costs!(sys::PSY.System, cost_sign::Float64)
         )
         PSY.set_operation_cost!(gen, new_cost)
     end
+end
+
+"""
+    build_cats_ed_models_acopf() -> Dict
+
+Return ED device models for the CATS system using `ACPPowerModel`.
+All branches are modeled with `StaticBranchUnbounded` — no `filter_function` —
+because `ACPPowerModel` must see every branch for AC feasibility.
+Losses are implicit in the nonlinear AC formulation; no separate loss term is needed.
+"""
+function build_cats_ed_models_acopf()
+    return Dict(
+        Line                       => StaticBranchUnbounded,
+        Transformer2W              => StaticBranchUnbounded,
+        ThermalStandard            => ThermalBasicDispatch,
+        PowerLoad                  => StaticPowerLoad,
+        RenewableDispatch          => RenewableFullDispatch,
+        HydroDispatch              => HydroDispatchRunOfRiver,
+        SynchronousCondenser       => SynchronousCondenserBasicDispatch,
+        TwoTerminalGenericHVDCLine => HVDCTwoTerminalLossless,
+    )
 end

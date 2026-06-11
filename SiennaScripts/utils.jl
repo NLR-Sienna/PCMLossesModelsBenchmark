@@ -1146,3 +1146,47 @@ function compute_iterative_error_based_on_generator_output(res_old, res_new)
     # Return the maximum error across all generator types
     return maximum([err_th, err_re])
 end
+
+"""
+    get_ptdf_bus_column_for_psi_bus(bus_ax, ptdf, sys) -> Vector{Int}
+
+Build a lookup vector `col[j]` such that `ptdf[arc_k, col[j]]` gives the correct
+PTDF factor for the bus identified by `bus_ax[j]` in PSI's `ActivePowerBalance`
+expression axis.
+
+`bus_ax` is `axes(injection, 1)` from a PSI container — its elements are whatever
+PSI uses as bus identifiers (typically PSY bus component names as strings, or
+integer bus numbers).
+
+`ptdf.lookup[1]` is a `Dict{bus_number::Int, ptdf_column_index::Int}` built by
+PowerNetworkMatrices.
+
+The function resolves PSI bus identifiers → PSY bus numbers (via `sys`) →
+PTDF column indices.
+
+Returns a `Vector{Int}` of length `length(bus_ax)`. Throws if any bus in `bus_ax`
+cannot be matched to a component in `sys` or to a column in `ptdf`.
+
+When the full PTDF (built from the same `sys`) is used, `col[j] == j` for all j
+and the result is identical to direct positional indexing.
+"""
+function get_ptdf_bus_column_for_psi_bus(bus_ax, ptdf, sys::PSY.System)
+    ptdf_lookup = ptdf.lookup[1]  # Dict{bus_number::Int => ptdf_column_index::Int}
+    name_to_number = Dict{String, Int}(
+        PSY.get_name(b) => PSY.get_number(b)
+        for b in PSY.get_components(PSY.ACBus, sys)
+    )
+    col = Vector{Int}(undef, length(bus_ax))
+    for (j, bus_id) in enumerate(bus_ax)
+        bus_id_str = string(bus_id)
+        bus_num = if haskey(ptdf_lookup, bus_id)
+            Int(bus_id)
+        elseif haskey(name_to_number, bus_id_str)
+            name_to_number[bus_id_str]
+        else
+            error("Bus identifier '$bus_id' not found in ptdf.lookup or system bus names")
+        end
+        col[j] = ptdf_lookup[bus_num]
+    end
+    return col
+end
