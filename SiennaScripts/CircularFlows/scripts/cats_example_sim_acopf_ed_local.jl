@@ -25,6 +25,8 @@ using Ipopt
 using Dates
 using DataFrames
 using Logging
+using Xpress
+const PNM = PowerNetworkMatrices
 
 include(joinpath(this_path, "..", "mapped_indices.jl"))
 include(joinpath(this_path, "..", "circular_flows.jl"))
@@ -40,6 +42,7 @@ const PSI = PowerSimulations
 cats_json = joinpath(this_path, "..", "..", "..", "Systems", "CATS", "CATS_saved_reduced_sys.json")
 
 highs_milp = PSI.optimizer_with_attributes(HiGHS.Optimizer, "mip_rel_gap" => 0.01)
+xpress_milp = PSI.optimizer_with_attributes(Xpress.Optimizer, "MIPRELSTOP" => 0.02)
 ipopt_nlp  = PSI.optimizer_with_attributes(Ipopt.Optimizer, "print_level" => 3)
 
 """
@@ -65,18 +68,21 @@ function detect_cats_circular_flows_sim_acopf(
     sys::PSY.System;
     time_step::Int = 1,
     ignore_pf_ed::Bool = true,
+    bounded = false,
+    voltage_threshold = 275.0,
 )
     ptdf = PTDF(sys)
 
     sim = build_uc_ed_simulation_with_acopf(
         sys, sys;
-        uc_models    = build_cats_uc_models_hv(),
-        ed_models    = build_cats_ed_models_acopf(),
-        uc_optimizer = highs_milp,
+        uc_models    = build_cats_uc_models_hv(; voltage_threshold = voltage_threshold, bounded = bounded),
+        ed_models    = build_cats_ed_models_acopf(; bounded = bounded),
+        uc_optimizer = xpress_milp,
         ed_optimizer = ipopt_nlp,
         ptdf_uc      = ptdf,
         ptdf_ed      = ptdf,
         ignore_pf_ed = ignore_pf_ed,
+        initial_time = DateTime("2019-01-01T12:00:00")
     )
 
     execute!(sim; enable_progress_bar = false)
@@ -94,7 +100,7 @@ function detect_cats_circular_flows_sim_acopf(
     add_hvdc_edges!(G, sys, res_vars_ed, bus_lookup; time_step = time_step)
 
     branches = collect(PSY.get_components(PSY.ACBranch, sys))
-    return find_circular_flows(G, bus_lookup, branches)
+    return find_circular_flows(G, bus_lookup, branches), sim
 end
 
 # ── Scenario A: circular flow expected (positive RE cost, HVDC enabled) ─────────
@@ -102,33 +108,21 @@ end
 println("=== Scenario A / mode=variables (ignore_pf_ed=true): ACPPowerModel variables ===")
 sys_a1 = build_cats_system(cats_json)
 set_cats_renewable_costs!(sys_a1, 1.0)
-C_a1 = detect_cats_circular_flows_sim_acopf(sys_a1; ignore_pf_ed = true)
+scale_cats_loads!(sys_a1, 0.30)
+C_a1, sim_a1 = detect_cats_circular_flows_sim_acopf(sys_a1; ignore_pf_ed = false, voltage_threshold = 275.0, bounded = true);
 println("  Cycles found: $(length(C_a1))")
 for (i, c) in enumerate(C_a1)
     println("  Cycle $i: buses=$(c.bus_numbers), min_flow=$(minimum(c.branch_flows)) MW")
 end
 
-println()
-println("=== Scenario A / mode=pf (ignore_pf_ed=false): post-solve AC PF ===")
-println("    (voltage stability factors available in res_ed after this call)")
-sys_a2 = build_cats_system(cats_json)
-set_cats_renewable_costs!(sys_a2, 1.0)
-C_a2 = detect_cats_circular_flows_sim_acopf(sys_a2; ignore_pf_ed = false)
-println("  Cycles found: $(length(C_a2))")
-for (i, c) in enumerate(C_a2)
-    println("  Cycle $i: buses=$(c.bus_numbers), min_flow=$(minimum(c.branch_flows)) MW")
-end
-
-# ── Scenario B: no circular flow expected (HVDC disabled, negative RE cost) ──────
+# ── Scenario B: no circular flow expected ──────
 
 println()
-println("=== Scenario B: no circular flow (HVDC disabled, ignore_pf_ed=true) ===")
+println("=== Scenario B: no circular flow (ignore_pf_ed=true) ===")
 sys_b = build_cats_system(cats_json)
 set_cats_renewable_costs!(sys_b, -1.0)
-for hvdc in PSY.get_components(PSY.TwoTerminalGenericHVDCLine, sys_b)
-    PSY.set_available!(hvdc, false)
-end
-C_b = detect_cats_circular_flows_sim_acopf(sys_b; ignore_pf_ed = true)
+scale_cats_loads!(sys_b, 0.30)
+C_b, sim_b = detect_cats_circular_flows_sim_acopf(sys_b; ignore_pf_ed = false, voltage_threshold = 275.0, bounded = true);
 println("  Cycles found: $(length(C_b))")
 for (i, c) in enumerate(C_b)
     println("  Cycle $i: buses=$(c.bus_numbers), min_flow=$(minimum(c.branch_flows)) MW")

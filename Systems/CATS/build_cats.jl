@@ -32,12 +32,17 @@ The full system PTDF must still be passed to the PSI `NetworkModel`; this filter
 only removes the per-branch flow-limit constraints for LV branches — it does NOT
 remove their contribution to the quadratic loss term.
 """
-function build_cats_uc_models_hv(; voltage_threshold::Float64 = 100.0)
+function build_cats_uc_models_hv(; voltage_threshold::Float64 = 100.0, bounded = false)
     filter_fn = x -> PSY.get_base_voltage(PSY.get_from(PSY.get_arc(x))) > voltage_threshold
+    if bounded
+        branch_model = StaticBranchBounds
+    else
+        branch_model = StaticBranchUnbounded
+    end
     return Dict(
-        Line          => DeviceModel(Line, StaticBranchUnbounded;
+        Line          => DeviceModel(Line, branch_model;
                              attributes = Dict("filter_function" => filter_fn)),
-        Transformer2W => DeviceModel(Transformer2W, StaticBranchUnbounded;
+        Transformer2W => DeviceModel(Transformer2W, branch_model;
                              attributes = Dict("filter_function" => filter_fn)),
         ThermalStandard            => ThermalBasicUnitCommitment,
         PowerLoad                  => StaticPowerLoad,
@@ -54,12 +59,17 @@ Return ED device models for CATS with the same LV branch filter as
 `build_cats_uc_models_hv`. Includes `SynchronousCondenser` which is
 present only in the CATS ED model.
 """
-function build_cats_ed_models_hv(; voltage_threshold::Float64 = 100.0)
+function build_cats_ed_models_hv(; voltage_threshold::Float64 = 100.0, bounded = false)
     filter_fn = x -> PSY.get_base_voltage(PSY.get_from(PSY.get_arc(x))) > voltage_threshold
+    if bounded
+        branch_model = StaticBranchBounds
+    else
+        branch_model = StaticBranchUnbounded
+    end
     return Dict(
-        Line          => DeviceModel(Line, StaticBranchUnbounded;
+        Line          => DeviceModel(Line, branch_model;
                              attributes = Dict("filter_function" => filter_fn)),
-        Transformer2W => DeviceModel(Transformer2W, StaticBranchUnbounded;
+        Transformer2W => DeviceModel(Transformer2W, branch_model;
                              attributes = Dict("filter_function" => filter_fn)),
         ThermalStandard            => ThermalBasicDispatch,
         PowerLoad                  => StaticPowerLoad,
@@ -104,6 +114,16 @@ function set_cats_renewable_costs!(sys::PSY.System, cost_sign::Float64)
     end
 end
 
+function scale_cats_loads!(sys::PSY.System, scale_factor::Float64)
+    loads = collect(PSY.get_components(PowerLoad, sys))
+    for load in loads
+        max_p = PSY.get_max_active_power(load)
+        p = PSY.get_active_power(load)
+        PSY.set_active_power!(load, p * scale_factor)
+        PSY.set_max_active_power!(load, max_p * scale_factor)
+    end
+end
+
 """
     build_cats_ed_models_acopf() -> Dict
 
@@ -112,10 +132,15 @@ All branches are modeled with `StaticBranchUnbounded` — no `filter_function` �
 because `ACPPowerModel` must see every branch for AC feasibility.
 Losses are implicit in the nonlinear AC formulation; no separate loss term is needed.
 """
-function build_cats_ed_models_acopf()
+function build_cats_ed_models_acopf(;bounded = false)
+    if bounded
+        branch_model = StaticBranchBounds
+    else
+        branch_model = StaticBranchUnbounded
+    end
     return Dict(
-        Line                       => StaticBranchUnbounded,
-        Transformer2W              => StaticBranchUnbounded,
+        Line                       => branch_model,
+        Transformer2W              => branch_model,
         ThermalStandard            => ThermalBasicDispatch,
         PowerLoad                  => StaticPowerLoad,
         RenewableDispatch          => RenewableFullDispatch,

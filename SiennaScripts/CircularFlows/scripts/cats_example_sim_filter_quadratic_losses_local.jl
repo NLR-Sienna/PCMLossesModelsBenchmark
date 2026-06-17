@@ -27,6 +27,7 @@ using Ipopt
 using Dates
 using DataFrames
 using Logging
+using Xpress
 
 include(joinpath(this_path, "..", "mapped_indices.jl"))
 include(joinpath(this_path, "..", "circular_flows.jl"))
@@ -42,6 +43,7 @@ const PSI = PowerSimulations
 cats_json = joinpath(this_path, "..", "..", "..", "Systems", "CATS", "CATS_saved_reduced_sys.json")
 
 highs_milp = PSI.optimizer_with_attributes(HiGHS.Optimizer, "mip_rel_gap" => 0.01)
+xpress_milp = PSI.optimizer_with_attributes(Xpress.Optimizer, "MIPRELSTOP" => 0.02)
 ipopt_nlp  = PSI.optimizer_with_attributes(Ipopt.Optimizer, "print_level" => 3)
 
 function print_branch_filter_stats(sys, voltage_threshold::Float64)
@@ -97,7 +99,7 @@ function detect_cats_circular_flows_sim_quad_filtered(
         sys, sys;
         uc_models    = uc_models_filtered,
         ed_models    = ed_models_filtered,
-        uc_optimizer = highs_milp,
+        uc_optimizer = xpress_milp,
         ed_optimizer = ipopt_nlp,
         ptdf_uc      = ptdf,
         ptdf_ed      = ptdf,
@@ -143,6 +145,7 @@ println()
 println("=== Scenario A: with circular flow (positive RE cost_sign, filtered quadratic losses) ===")
 sys_a = build_cats_system(cats_json)
 set_cats_renewable_costs!(sys_a, 1.0)
+scale_cats_loads!(sys_a, 0.30)
 C_a = detect_cats_circular_flows_sim_quad_filtered(sys_a; voltage_threshold = 345.0)
 println("  Cycles found: $(length(C_a))")
 for (i, c) in enumerate(C_a)
@@ -152,9 +155,7 @@ end
 println("=== Scenario B: without circular flow (HVDC disabled, filtered quadratic losses) ===")
 sys_b = build_cats_system(cats_json)
 set_cats_renewable_costs!(sys_b, -1.0)
-for hvdc in PSY.get_components(PSY.TwoTerminalGenericHVDCLine, sys_b)
-    PSY.set_available!(hvdc, false)
-end
+scale_cats_loads!(sys_b, 0.30)
 C_b = detect_cats_circular_flows_sim_quad_filtered(sys_b; voltage_threshold = 100.0)
 println("  Cycles found: $(length(C_b))")
 for (i, c) in enumerate(C_b)
