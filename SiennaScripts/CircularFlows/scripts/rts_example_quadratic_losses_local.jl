@@ -1,6 +1,6 @@
 # NOTE: Requires Gurobi with NonConvex=2 (MIQP with binary + quadratic terms).
 # Do not run locally unless Gurobi is available.
-# Run from the scripts/ directory:
+# Run from the repo root:
 #   julia SiennaScripts/CircularFlows/scripts/rts_example_quadratic_losses_local.jl
 using Pkg
 this_path = @__DIR__

@@ -1,6 +1,7 @@
 # CATS cascaded UC (lossless PTDF, HiGHS) + ED (quadratic P=I²R losses, Ipopt).
 # Binaries fixed by feedforward → ED is a pure NLP, no Gurobi required.
-# Run from the scripts/ directory.
+# Run from the repo root:
+#   julia SiennaScripts/CircularFlows/scripts/cats_example_quadratic_losses_local.jl
 using Pkg
 this_path = @__DIR__
 Pkg.activate(joinpath(this_path, "..", "..", ".."))

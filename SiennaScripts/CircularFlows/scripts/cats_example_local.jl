@@ -1,5 +1,6 @@
 # Circular-flow detection on the CATS system using a lossless PTDF UC model.
-# Solved with HiGHS. Run from the scripts/ directory.
+# Solved with HiGHS. Run from the repo root:
+#   julia SiennaScripts/CircularFlows/scripts/cats_example_local.jl
 using Pkg
 this_path = @__DIR__
 Pkg.activate(joinpath(this_path, "..", "..", ".."))

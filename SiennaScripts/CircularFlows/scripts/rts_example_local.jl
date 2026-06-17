@@ -1,4 +1,4 @@
-# Run from the scripts/ directory on a local machine:
+# Run from the repo root on a local machine:
 #   julia SiennaScripts/CircularFlows/scripts/rts_example_local.jl
 using Pkg
 this_path = @__DIR__  # = .../SiennaScripts/CircularFlows/scripts

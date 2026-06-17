@@ -2,7 +2,7 @@
 # using PSI Simulation with SemiContinuousFeedforward — no manual binary fixing.
 # Binaries are propagated from UC → ED via feedforward; ED is a pure NLP.
 # No Gurobi required.
-# Run from the scripts/ directory:
+# Run from the repo root:
 #   julia SiennaScripts/CircularFlows/scripts/cats_example_sim_quadratic_losses_local.jl
 using Pkg
 this_path = @__DIR__
