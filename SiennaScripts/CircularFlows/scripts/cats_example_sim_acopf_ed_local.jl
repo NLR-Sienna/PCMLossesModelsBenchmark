@@ -8,8 +8,11 @@
 #   julia SiennaScripts/CircularFlows/scripts/cats_example_sim_acopf_ed_local.jl
 using Pkg
 this_path = @__DIR__
-Pkg.activate(joinpath(this_path, "..", "..", ".."))
+repo_path = joinpath(this_path, "..", "..", "..")
+Pkg.activate(repo_path)
 Pkg.instantiate()
+Pkg.develop(path = joinpath(repo_path, "lbt_HSL_jll.jl-2023.11.7", "HSL_jll.jl-2023.11.7"))
+using HSL_jll
 
 using PowerSystems
 using InfrastructureSystems
@@ -42,8 +45,12 @@ const PSI = PowerSimulations
 cats_json = joinpath(this_path, "..", "..", "..", "Systems", "CATS", "CATS_saved_reduced_sys.json")
 
 highs_milp = PSI.optimizer_with_attributes(HiGHS.Optimizer, "mip_rel_gap" => 0.01)
-xpress_milp = PSI.optimizer_with_attributes(Xpress.Optimizer, "MIPRELSTOP" => 0.02)
-ipopt_nlp  = PSI.optimizer_with_attributes(Ipopt.Optimizer, "print_level" => 3)
+xpress_milp = PSI.optimizer_with_attributes(Xpress.Optimizer, "MIPRELSTOP" => 0.05)
+ipopt_nlp  = JuMP.optimizer_with_attributes(() -> Ipopt.Optimizer(),
+    "print_level" => 5,
+    "hsllib" => HSL_jll.libhsl_path,
+    "linear_solver" => "ma57"
+)
 
 """
     detect_cats_circular_flows_sim_acopf(
@@ -105,25 +112,45 @@ end
 
 # ── Scenario A: circular flow expected (positive RE cost, HVDC enabled) ─────────
 
-println("=== Scenario A / mode=variables (ignore_pf_ed=true): ACPPowerModel variables ===")
+println("=== Scenario A / mode=variables (ignore_pf_ed=false): ACPPowerModel variables ===")
 sys_a1 = build_cats_system(cats_json)
 set_cats_renewable_costs!(sys_a1, 1.0)
-scale_cats_loads!(sys_a1, 0.30)
+scale_cats_loads!(sys_a1, 0.35)
+# Running Unbounded with ignore_pf_ed=false leads to numerical issues in the AC power flow
 C_a1, sim_a1 = detect_cats_circular_flows_sim_acopf(sys_a1; ignore_pf_ed = false, voltage_threshold = 275.0, bounded = true);
 println("  Cycles found: $(length(C_a1))")
 for (i, c) in enumerate(C_a1)
     println("  Cycle $i: buses=$(c.bus_numbers), min_flow=$(minimum(c.branch_flows)) MW")
 end
 
+sim_res_a = SimulationResults(sim_a1)
+res_ed_a  = get_decision_problem_results(sim_res_a, "ED")
+stab_factors_a = read_realized_aux_variable(
+    res_ed_a,
+    "PowerFlowVoltageStabilityFactors__ACBus";
+    table_format = TableFormat.WIDE,
+)
+
 # ── Scenario B: no circular flow expected ──────
 
 println()
-println("=== Scenario B: no circular flow (ignore_pf_ed=true) ===")
+println("=== Scenario B: no circular flow expected(ignore_pf_ed=false) ===")
 sys_b = build_cats_system(cats_json)
 set_cats_renewable_costs!(sys_b, -1.0)
-scale_cats_loads!(sys_b, 0.30)
+scale_cats_loads!(sys_b, 0.35)
 C_b, sim_b = detect_cats_circular_flows_sim_acopf(sys_b; ignore_pf_ed = false, voltage_threshold = 275.0, bounded = true);
 println("  Cycles found: $(length(C_b))")
 for (i, c) in enumerate(C_b)
     println("  Cycle $i: buses=$(c.bus_numbers), min_flow=$(minimum(c.branch_flows)) MW")
 end
+
+sim_res_b = SimulationResults(sim_b)
+res_ed_b  = get_decision_problem_results(sim_res_b, "ED")
+stab_factors_b = read_realized_aux_variable(
+    res_ed_b,
+    "PowerFlowVoltageStabilityFactors__ACBus";
+    table_format = TableFormat.WIDE,
+)
+
+include(joinpath(this_path, "..", "print_utils.jl"))
+print_stability_comparison(stab_factors_a, stab_factors_b; top_n = 20)

@@ -125,6 +125,7 @@ function make_ptdf_model_without_losses(
         optimizer = optimizer,
         name = name,
         store_variable_names = true,  # Store names for debugging
+        optimizer_solve_log_print = true,
     )
 
     return decision_model

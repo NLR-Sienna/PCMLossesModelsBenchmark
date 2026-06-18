@@ -10,8 +10,11 @@
 #   julia SiennaScripts/CircularFlows/scripts/cats_example_sim_filter_quadratic_losses_local.jl
 using Pkg
 this_path = @__DIR__
-Pkg.activate(joinpath(this_path, "..", "..", ".."))
+repo_path = joinpath(this_path, "..", "..", "..")
+Pkg.activate(repo_path)
 Pkg.instantiate()
+Pkg.develop(path = joinpath(repo_path, "lbt_HSL_jll.jl-2023.11.7", "HSL_jll.jl-2023.11.7"))
+using HSL_jll
 
 using PowerSystems
 using InfrastructureSystems
@@ -43,8 +46,12 @@ const PSI = PowerSimulations
 cats_json = joinpath(this_path, "..", "..", "..", "Systems", "CATS", "CATS_saved_reduced_sys.json")
 
 highs_milp = PSI.optimizer_with_attributes(HiGHS.Optimizer, "mip_rel_gap" => 0.01)
-xpress_milp = PSI.optimizer_with_attributes(Xpress.Optimizer, "MIPRELSTOP" => 0.02)
-ipopt_nlp  = PSI.optimizer_with_attributes(Ipopt.Optimizer, "print_level" => 3)
+xpress_milp = PSI.optimizer_with_attributes(Xpress.Optimizer, "MIPRELSTOP" => 0.05)
+ipopt_nlp  = JuMP.optimizer_with_attributes(() -> Ipopt.Optimizer(),
+    "print_level" => 5,
+    "hsllib" => HSL_jll.libhsl_path,
+    "linear_solver" => "ma57"
+)
 
 function print_branch_filter_stats(sys, voltage_threshold::Float64)
     n_lines    = length(collect(PSY.get_components(PSY.Line, sys)))
