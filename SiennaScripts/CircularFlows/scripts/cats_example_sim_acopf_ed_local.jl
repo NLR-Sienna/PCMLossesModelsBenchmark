@@ -11,7 +11,8 @@ this_path = @__DIR__
 repo_path = joinpath(this_path, "..", "..", "..")
 Pkg.activate(repo_path)
 Pkg.instantiate()
-Pkg.develop(path = joinpath(repo_path, "lbt_HSL_jll.jl-2023.11.7", "HSL_jll.jl-2023.11.7"))
+# Uncomment this line to develop the local HSL_jll package (with MA57) for Ipopt's linear solver
+#Pkg.develop(path = joinpath(repo_path, "lbt_HSL_jll.jl-2023.11.7", "HSL_jll.jl-2023.11.7"))
 using HSL_jll
 
 using PowerSystems
