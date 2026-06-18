@@ -108,33 +108,32 @@ PNM.populate_branch_maps_by_type!(ptdf.network_reduction_data)
 ptdf.network_reduction_data.name_to_arc_map[Line]
 
 set_renewable_costs!(sys_a1, 1.0)
-C_a1, sim_a1 = detect_rts_circular_flows_sim_acopf(sys_a1; ignore_pf_ed = false);
+C_a1, sim_a1 = detect_rts_circular_flows_sim_acopf(sys_a1; ignore_pf_ed = true);
 println("  Cycles found: $(length(C_a1))")
 for (i, c) in enumerate(C_a1)
     println("  Cycle $i: buses=$(c.bus_numbers), min_flow=$(minimum(c.branch_flows)) MW")
 end
 
-println()
-println("=== Scenario A / mode=pf (ignore_pf_ed=false): post-solve AC PF ===")
-println("    (voltage stability factors available in res_ed after this call)")
-sys_a2 = build_rts_system()
-set_renewable_costs!(sys_a2, 1.0)
-C_a2 = detect_rts_circular_flows_sim_acopf(sys_a2; ignore_pf_ed = false)
-println("  Cycles found: $(length(C_a2))")
-for (i, c) in enumerate(C_a2)
-    println("  Cycle $i: buses=$(c.bus_numbers), min_flow=$(minimum(c.branch_flows)) MW")
-end
+sim_a1_res = SimulationResults(sim_a1)
+res_ed_a1  = get_decision_problem_results(sim_a1_res, "ED")
+res_uc_a1 = get_decision_problem_results(sim_a1_res, "UC")
+uc_dual = read_realized_variable(res_uc_a1, "CopperPlateBalanceConstraint__System")
+line_flow_pf_aux = read_realized_aux_variable(res_ed_a1, "PowerFlowBranchActivePowerFromTo__Line")
+line_flow_acopf = read_realized_variable(res_ed_a1, "FlowActivePowerFromToVariable__Line")
 
 # ── Scenario B: no circular flow expected (HVDC disabled, negative RE cost) ──────
 
 println("=== Scenario B: no circular flow (ignore_pf_ed=true) ===")
 sys_b = build_rts_system()
-set_renewable_costs!(sys_b, -10.0)
-#for hvdc in PSY.get_components(PSY.TwoTerminalGenericHVDCLine, sys_b)
-#    PSY.set_available!(hvdc, false)
-#end
-C_b = detect_rts_circular_flows_sim_acopf(sys_b; ignore_pf_ed = false)
+set_renewable_costs!(sys_b, -100.0)
+C_b, sim_b = detect_rts_circular_flows_sim_acopf(sys_b; ignore_pf_ed = true);
 println("  Cycles found: $(length(C_b))")
 for (i, c) in enumerate(C_b)
     println("  Cycle $i: buses=$(c.bus_numbers), min_flow=$(minimum(c.branch_flows)) MW")
 end
+
+
+sim_b_res = SimulationResults(sim_b)
+res_ed_b  = get_decision_problem_results(sim_b_res, "ED")
+res_uc_b = get_decision_problem_results(sim_b_res, "UC")
+uc_dual = read_realized_variable(res_uc_b, "CopperPlateBalanceConstraint__System")

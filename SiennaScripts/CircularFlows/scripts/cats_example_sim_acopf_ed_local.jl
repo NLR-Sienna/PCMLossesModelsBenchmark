@@ -126,11 +126,21 @@ end
 
 sim_res_a = SimulationResults(sim_a1)
 res_ed_a  = get_decision_problem_results(sim_res_a, "ED")
+res_uc_a = get_decision_problem_results(sim_res_a, "UC")
+uc_dual = read_realized_variable(res_uc_a, "CopperPlateBalanceConstraint__System")
 stab_factors_a = read_realized_aux_variable(
     res_ed_a,
     "PowerFlowVoltageStabilityFactors__ACBus";
     table_format = TableFormat.WIDE,
 )
+
+
+
+flow_line_acopf = read_realized_variable(res_ed_a, "FlowActivePowerFromToVariable__Line")
+flow_line_pf_aux = read_realized_aux_variable(res_ed_a, "PowerFlowBranchActivePowerFromTo__Line")
+flow_hvdc_acopf = read_realized_variable(res_ed_a, "FlowReactivePowerFromToVariable__TwoTerminalGenericHVDCLine")
+flow_hvdc_pf_aux = read_realized_aux_variable(res_ed_a, "PowerFlowBranchActivePowerFromTo__TwoTerminalGenericHVDCLine")
+
 
 # ── Scenario B: no circular flow expected ──────
 
@@ -139,7 +149,7 @@ println("=== Scenario B: no circular flow expected(ignore_pf_ed=false) ===")
 sys_b = build_cats_system(cats_json)
 set_cats_renewable_costs!(sys_b, -1.0)
 scale_cats_loads!(sys_b, 0.35)
-C_b, sim_b = detect_cats_circular_flows_sim_acopf(sys_b; ignore_pf_ed = false, voltage_threshold = 275.0, bounded = true);
+C_b, sim_b = detect_cats_circular_flows_sim_acopf(sys_b; ignore_pf_ed = true, voltage_threshold = 275.0, bounded = true);
 println("  Cycles found: $(length(C_b))")
 for (i, c) in enumerate(C_b)
     println("  Cycle $i: buses=$(c.bus_numbers), min_flow=$(minimum(c.branch_flows)) MW")
@@ -147,6 +157,8 @@ end
 
 sim_res_b = SimulationResults(sim_b)
 res_ed_b  = get_decision_problem_results(sim_res_b, "ED")
+res_uc_b = get_decision_problem_results(sim_res_b, "UC")
+uc_dual_b = read_realized_variable(res_uc_b, "CopperPlateBalanceConstraint__System")
 stab_factors_b = read_realized_aux_variable(
     res_ed_b,
     "PowerFlowVoltageStabilityFactors__ACBus";
@@ -155,3 +167,12 @@ stab_factors_b = read_realized_aux_variable(
 
 include(joinpath(this_path, "..", "print_utils.jl"))
 print_stability_comparison(stab_factors_a, stab_factors_b; top_n = 20)
+
+#=
+┌───────────────────────┬───────────┬───────────────────────────┐
+│ name                  │ available │ arc                       │
+├───────────────────────┼───────────┼───────────────────────────┤
+│ Newark_NRS_HVDC       │ true      │ Arc: bus-8335 -> bus-8814 │
+│ Metcalf_SanJoseB_HVDC │ true      │ Arc: bus-1819 -> bus-1258 │
+└───────────────────────┴───────────┴───────────────────────────┘
+=#

@@ -168,3 +168,7 @@ stab_factors_b = read_realized_aux_variable(
 )
 
 print_stability_comparison(stab_factors_a, stab_factors_b; top_n = 42)
+
+show_components(sys_a, TwoTerminalGenericHVDCLine, [:arc])
+get_component(ACBus, sys_a, "Arne")
+get_component(ACBus, sys_a, "Chifa")
