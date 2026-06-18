@@ -21,3 +21,10 @@ PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
 SimpleWeightedGraphs = "47aef6b3-ad0c-573a-a1e2-d07658019622"
 TimeSeries = "9e3dc215-6440-5c97-bce1-76c03772f85e"
 Xpress = "9e70acf3-d6c9-5be6-b5bd-4e2c73e3e054"
+
+[sources]
+HSL_jll = {path = "lbt_HSL_jll.jl-2023.11.7/HSL_jll.jl-2023.11.7"}
+
+[compat]
+Xpress = "=0.17.0"
+PowerSimulations = "=0.35.0"
