@@ -68,6 +68,7 @@ function candidate_projects_data(sys)
             ext = Dict(
                 "willingness_to_pay" => candidate1_willingness_to_pay,
                 "is_candidate" => true,
+                "candidate" => true,
                 "project_cost" => 100.0,
             )
         ),
@@ -92,6 +93,7 @@ function candidate_projects_data(sys)
             ext = Dict(
                 "willingness_to_pay" => candidate2_willingness_to_pay,
                 "is_candidate" => true,
+                "candidate" => true,
                 "project_cost" => 50000.0,
             )
         ),
@@ -297,4 +299,32 @@ function reconductoring_candidate_data(sys)
         )
     ]
     return []
+end
+
+
+function build_power_flow_model_5_bus(sys; num_time_periods = 2, use_slacks = false)
+
+    ptdf = PTDF(sys)
+    all_lines       = collect(get_components(PSY.Line, sys))
+    candidate_lines = filter(l -> occursin("candidate", get_name(l)), all_lines)
+    existing_lines  = filter(l -> !occursin("candidate", get_name(l)), all_lines)
+
+    template = ProblemTemplate(NetworkModel(PTDFPowerModel; use_slacks = use_slacks))
+    set_device_model!(template, ThermalStandard, ThermalDispatchNoMin)
+    set_device_model!(template, Line, StaticBranch)
+    set_device_model!(template, PhaseShiftingTransformer, StaticBranch)
+    set_device_model!(template, PowerLoad, StaticPowerLoad)
+
+    model = DecisionModel(
+        template,
+        sys;
+        optimizer = DEFAULT_MILP_OPTIMIZER, #Xpress.Optimizer,
+        name = "UC",
+        store_variable_names=true,
+        horizon = Dates.Hour(num_time_periods),
+    )
+
+    build!(model; output_dir = mktempdir())
+
+    return model
 end

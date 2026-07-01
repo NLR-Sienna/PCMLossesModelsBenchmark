@@ -10,18 +10,22 @@ const DEFAULT_UC_MODELS = Dict(
     #HydroDispatch => HydroDispatchRunOfRiver,
 )
 
-const DEFAULT_MILP_OPTIMIZER = optimizer_with_attributes(Gurobi.Optimizer)
+#const DEFAULT_MILP_OPTIMIZER = optimizer_with_attributes(Gurobi.Optimizer)
+const DEFAULT_MILP_OPTIMIZER = optimizer_with_attributes(Xpress.Optimizer)
 #optimizer_with_attributes(Xpress.Optimizer)
 
 const PSI = PowerSimulations
 const PSY = PowerSystems
-const M_max = 10.0
+const PNM = PowerNetworkMatrices
+#const M_max = 10.0
 
 struct GenerationInvestmentVariable <: PSI.VariableType end
 struct BranchInvestmentVariable <: PSI.VariableType end
 struct BranchCancellingFlowVariable <: PSI.VariableType end
 struct BigMConstraint <: PSI.ConstraintType end
 
+struct IdentityDict end
+Base.getindex(::IdentityDict, x) = x
 
 """
     make_base_ptdf_model(sys; device_models, optimizer, ptdf, name, ignore_pf) -> DecisionModel
@@ -219,7 +223,7 @@ variable `z_k`, keyed by component type `T`:
 where M = `M_max` (global constant).  When `z_k = 1` (line built) `v_k` is forced to zero;
 when `z_k = 0` (line not built) `v_k` is free within ±M.
 """
-function add_bigM_linking_constraints!(decision_model, candidate_lines, T, z_var, v_var)
+function add_bigM_linking_constraints!(decision_model, candidate_lines, T, z_var, v_var, Big_M)
     container  = decision_model.internal.container
     jump_model = PSI.get_jump_model(container)
     time_steps = PSI.get_time_steps(container)
@@ -246,7 +250,7 @@ function add_bigM_linking_constraints!(decision_model, candidate_lines, T, z_var
     for line in candidate_lines
         name = get_name(line)
         #Big_M    = get_rating(line)
-        Big_M = M_max
+        #Big_M = M_max
         for t in time_steps
             constraint_ub[name, t] = JuMP.@constraint(jump_model, v_var[name, t] <= Big_M * (1 - z_var[name]))
             constraint_lb[name, t] = JuMP.@constraint(jump_model, v_var[name, t] >= -Big_M * (1 - z_var[name]))
@@ -270,7 +274,8 @@ function add_shift_terms_to_existing_line_constraints!(
     candidate_lines,
     v_var,
     ptdf,
-    sys,
+    sys;
+    map_branch_name = IdentityDict(),  # function to map from line name to constraint name, if different. default to identity for backwards compatibility
 )
     container  = decision_model.internal.container
     time_steps = PSI.get_time_steps(container)
@@ -289,9 +294,9 @@ function add_shift_terms_to_existing_line_constraints!(
 
             for t in time_steps
                 # UB: add  shift · v_k[t]
-                set_normalized_coefficient(ub_con[l_name, t], v_var[k_name, t], shift)
+                set_normalized_coefficient(ub_con[map_branch_name[l_name], t], v_var[k_name, t], shift)
                 # LB: add shift · v_k[t]
-                set_normalized_coefficient(lb_con[l_name, t], v_var[k_name, t], shift)
+                set_normalized_coefficient(lb_con[map_branch_name[l_name], t], v_var[k_name, t], shift)
             end
         end
     end
@@ -384,15 +389,20 @@ read from `get_ext(line)["project_cost"]` (defaults to 0 if absent).
 `z_var` is the binary-variable container returned by
 `add_flow_canceling_terms!`.
 """
-function add_candidate_line_investment_costs!(decision_model, z_var)
+function add_candidate_line_investment_costs!(
+    decision_model, 
+    z_var
+    )
+
     sys        = PSI.get_system(decision_model)
     container  = decision_model.internal.container
     jump_model = PSI.get_jump_model(container)
 
-    candidate_lines = filter(
-        l -> occursin("candidate", get_name(l)),
-        collect(get_components(PSY.Line, sys)),
-    )
+    # candidate_lines = filter(
+    #     l -> occursin("candidate", get_name(l)),
+    #     collect(get_components(PSY.Line, sys)),
+    # )
+    candidate_lines = get_components(x -> get(get_ext(x), "is_candidate", false), Line, sys)
 
     obj = objective_function(jump_model)
     for line in candidate_lines
@@ -494,13 +504,13 @@ investment terms applied in one call.  Internally it:
 5. Adds line investment costs and candidate generation investment constraints to the
    objective.
 """
-function build_model_with_flow_canceling_terms(sys)
+function build_model_with_flow_canceling_terms(sys, Big_M; num_time_periods = 2, use_slacks = false)
     ptdf = PTDF(sys)
     all_lines       = collect(get_components(PSY.Line, sys))
     candidate_lines = filter(l -> occursin("candidate", get_name(l)), all_lines)
     existing_lines  = filter(l -> !occursin("candidate", get_name(l)), all_lines)
 
-    template = ProblemTemplate(NetworkModel(PTDFPowerModel; use_slacks = true))
+    template = ProblemTemplate(NetworkModel(PTDFPowerModel; use_slacks = use_slacks))
     set_device_model!(template, ThermalStandard, ThermalDispatchNoMin)
     set_device_model!(template, Line, StaticBranch)
     set_device_model!(template, PhaseShiftingTransformer, StaticBranch)
@@ -512,6 +522,7 @@ function build_model_with_flow_canceling_terms(sys)
         optimizer = DEFAULT_MILP_OPTIMIZER, #Xpress.Optimizer,
         name = "UC",
         store_variable_names=true,
+        horizon = Dates.Hour(num_time_periods),
     )
 
     build!(model; output_dir = mktempdir())
@@ -519,7 +530,7 @@ function build_model_with_flow_canceling_terms(sys)
     candidate_lines = get_components(x -> contains(x.name, "candidate"), Line, sys)
     z_var = add_branch_investment_variables!(model, candidate_lines, Line)
     v_var = add_branch_cancelling_flow_variables!(model, candidate_lines, Line)
-    add_bigM_linking_constraints!(model, candidate_lines, Line, z_var, v_var)
+    add_bigM_linking_constraints!(model, candidate_lines, Line, z_var, v_var, Big_M)
 
     existing_lines = get_components(get_available,Line, sys)
     add_shift_terms_to_existing_line_constraints!(
@@ -664,10 +675,10 @@ This extends `build_model_with_flow_canceling_terms` by adding:
 Requires an NLP-capable solver (e.g. Ipopt) because of the quadratic constraints.
 """
 function build_model_with_flow_canceling_and_quadratic_losses(
-    sys;
-    optimizer = optimizer_with_attributes(Gurobi.Optimizer),
+    system;
+    optimizer = optimizer_with_attributes(Xpress.Optimizer) #optimizer = optimizer_with_attributes(Gurobi.Optimizer),
 )
-    ptdf = PTDF(sys)
+    ptdf = PTDF(system)
 
     template = ProblemTemplate(NetworkModel(PTDFPowerModel; use_slacks = true))
     set_device_model!(template, ThermalStandard, ThermalDispatchNoMin)
@@ -677,7 +688,7 @@ function build_model_with_flow_canceling_and_quadratic_losses(
 
     model = DecisionModel(
         template,
-        sys;
+        system;
         optimizer = optimizer,
         name = "UC_QuadLoss",
         store_variable_names = true,
@@ -686,21 +697,21 @@ function build_model_with_flow_canceling_and_quadratic_losses(
     build!(model; output_dir = mktempdir())
 
     # --- Flow-cancelling terms (same as build_model_with_flow_canceling_terms) ---
-    candidate_lines = get_components(x -> contains(x.name, "candidate"), Line, sys)
+    candidate_lines = get_components(x -> contains(x.name, "candidate"), Line, system)
     z_var = add_branch_investment_variables!(model, candidate_lines, Line)
     v_var = add_branch_cancelling_flow_variables!(model, candidate_lines, Line)
-    add_bigM_linking_constraints!(model, candidate_lines, Line, z_var, v_var)
+    add_bigM_linking_constraints!(model, candidate_lines, Line, z_var, v_var, Big_M)
 
-    existing_lines = get_components(get_available, Line, sys)
+    existing_lines = get_components(get_available, Line, system)
     add_shift_terms_to_existing_line_constraints!(
-        model, existing_lines, Line, candidate_lines, v_var, ptdf, sys,
+        model, existing_lines, Line, candidate_lines, v_var, ptdf, system,
     )
-    existing_xfrm = get_components(get_available, PhaseShiftingTransformer, sys)
+    existing_xfrm = get_components(get_available, PhaseShiftingTransformer, system)
     add_shift_terms_to_existing_line_constraints!(
-        model, existing_xfrm, PhaseShiftingTransformer, candidate_lines, v_var, ptdf, sys,
+        model, existing_xfrm, PhaseShiftingTransformer, candidate_lines, v_var, ptdf, system,
     )
     add_shift_terms_to_candidate_line_constraints!(
-        model, sys, candidate_lines, Line, z_var, v_var, ptdf,
+        model, system, candidate_lines, Line, z_var, v_var, ptdf,
     )
     add_candidate_line_investment_costs!(model, z_var)
     add_candidate_generation_investment_constraints!(model, ThermalStandard)
@@ -708,7 +719,7 @@ function build_model_with_flow_canceling_and_quadratic_losses(
     # --- Quadratic loss approximation ---
     loss_var = _fc_add_loss_variables!(model)
     _fc_add_loss_to_copperplate_balance!(model, loss_var)
-    _fc_add_quadratic_loss_constraints!(model, sys, ptdf)
+    _fc_add_quadratic_loss_constraints!(model, system, ptdf)
 
     return model
 end
