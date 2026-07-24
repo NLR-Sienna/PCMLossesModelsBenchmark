@@ -1,0 +1,6 @@
+number,name,available,bustype,angle,magnitude,voltage_limits,base_voltage,area,load_zone
+3,bus-3,true,PV,-0.00976895688926266,1.1,"(min = 0.9, max = 1.1)",230.0,1,1
+10,bus-10,true,PV,0.06266307973312801,1.06907,"(min = 0.9, max = 1.1)",230.0,1,1
+2,bus-2,true,PQ,-0.012822061349776342,1.08407,"(min = 0.9, max = 1.1)",230.0,1,1
+1,bus-1,true,PV,0.048935017968641414,1.07762,"(min = 0.9, max = 1.1)",230.0,1,1
+4,bus-4,true,REF,0.0,1.06414,"(min = 0.9, max = 1.1)",230.0,1,1

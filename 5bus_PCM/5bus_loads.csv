@@ -1,0 +1,4 @@
+name,available,bus_name,bus_number,area,active_power,reactive_power,max_active_power,max_reactive_power
+bus4,true,bus-4,4,"Area(1, 0.0, 0.0, 0.0, Dict{String, Any}(""I"" => """", ""ARNAME"" => """", ""PTOL"" => """", ""PDES"" => """", ""ISW"" => """"))",4.0,1.3147,4.0,1.3147
+bus3,true,bus-3,3,"Area(1, 0.0, 0.0, 0.0, Dict{String, Any}(""I"" => """", ""ARNAME"" => """", ""PTOL"" => """", ""PDES"" => """", ""ISW"" => """"))",3.0,0.9861,3.0,0.9861
+bus2,true,bus-2,2,"Area(1, 0.0, 0.0, 0.0, Dict{String, Any}(""I"" => """", ""ARNAME"" => """", ""PTOL"" => """", ""PDES"" => """", ""ISW"" => """"))",3.0,0.9861,3.0,0.9861

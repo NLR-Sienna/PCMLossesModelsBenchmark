@@ -1,0 +1,120 @@
+  Activating project at `/kfs2/projects/wetoowiroc/jzhang2/PCMLossesModelsBenchmark`
+┌ Info: Building new system matpower_case5_sys from raw data
+└   sys_descriptor.raw_data = "/home/jzhang2/.julia/artifacts/edcb5940e84a802a86ad4f2223214d33121ac044/PowerSystemsTestData-4.0.2/matpower/case5.m"
+[ Info: Correcting vm in bus 1 to 1.07762 to match generator set-point
+[ Info: Correcting vm in bus 3 to 1.1 to match generator set-point
+[ Info: Correcting vm in bus 4 to 1.06414 to match generator set-point
+[ Info: Correcting vm in bus 10 to 1.06907 to match generator set-point
+[ Info: extending matpower format with data: areas 1x3
+[ Info: No conformity field found for 3 load(s). Setting to default value of 1 (Conforming Load).
+┌ Warning: Reflecting transformer shunts to primary; the ybus matrix will differ from matpower
+└ @ PowerSystems ~/.julia/packages/PowerSystems/uwQkn/src/parsers/pm_io/matpower.jl:585
+┌ Warning: Reflecting transformer shunts to primary; the ybus matrix will differ from matpower
+└ @ PowerSystems ~/.julia/packages/PowerSystems/uwQkn/src/parsers/pm_io/matpower.jl:585
+[ Info: reversing the orientation of branch 6 (4, 3) to be consistent with other parallel branches
+[ Info: removing 1 cost terms from generator 5: [1000.0, 0.0]
+[ Info: removing 1 cost terms from generator 4: [4000.0, 0.0]
+[ Info: removing 1 cost terms from generator 2: [1500.0, 0.0]
+[ Info: removing 1 cost terms from generator 3: [3000.0, 0.0]
+[ Info: removing 1 cost terms from generator 1: [1400.0, 0.0]
+┌ Info: Constructing System from Power Models
+│   data["name"] = "nesta_case5_pjm"
+└   data["source_type"] = "matpower"
+[ Info: Reading bus data
+[ Info: Reading Load data in PowerModels dict to populate System ...
+[ Info: Reading LoadZones data in PowerModels dict to populate System ...
+[ Info: Reading Zone data
+[ Info: There is no Zone data in this file
+[ Info: Reading generator data
+[ Info: Reading switch data
+[ Info: Reading breaker data
+[ Info: There is no breaker data in this file
+[ Info: Reading branch data
+[ Info: Reading Impedance Correction Table data
+[ Info: There is no Impedance Correction Table data in this file
+┌ Warning: Transformer bus-3-bus-4-i_5 per-unit reactance 0.0297 is lower than the typical range (min = 0.05, max = 0.2). Check if the reactance source data is correct.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/uwQkn/src/utils/IO/branchdata_checks.jl:224
+┌ Warning: Transformer bus-3-bus-4-i_6 per-unit reactance 0.03274425 is lower than the typical range (min = 0.05, max = 0.2). Check if the reactance source data is correct.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/uwQkn/src/utils/IO/branchdata_checks.jl:224
+[ Info: rating 240.0 MW for bus-4-bus-10-i_7 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating_b 240.0 MW for bus-4-bus-10-i_7 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating_c 240.0 MW for bus-4-bus-10-i_7 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: Reading switched shunt data
+[ Info: There is no switched shunt data in this file
+[ Info: Reading shunt data
+[ Info: Reading DC Line data
+[ Info: Reading VSC Line data
+[ Info: There is no VSC lines data in this file
+[ Info: Reading FACTS data
+[ Info: There is no facts data in this file
+[ Info: Reading storage data
+[ Info: Reading 3W transformer data
+[ Info: There is no 3W transformer data in this file
+┌ Warning: No substation data found
+└ @ PowerSystems ~/.julia/packages/PowerSystems/uwQkn/src/parsers/power_models_data.jl:201
+[ Info: Serialized System to /home/jzhang2/.julia/packages/PowerSystemCaseBuilder/zW01F/data/serialized_system/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/matpower_case5_sys.json
+[ Info: Serialized System metadata to /home/jzhang2/.julia/packages/PowerSystemCaseBuilder/zW01F/data/serialized_system/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/matpower_case5_sys_metadata.json
+[ Info: Loaded time series from storage file existing=modified_RTS_GMLC_DA_sys_noForecast_time_series_storage.h5 new=/tmp/scratch/15339117/jl_W10Ei4 compression=CompressionSettings(false, CompressionTypes.DEFLATE = 1, 3, true)
+[ Info: rating 193.87 MW for C31-2 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 69.93 MW for B8 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 199.8 MW for B26 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 1106.33 MW for A32-2 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 1106.33 MW for CA-1 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 387.22 MW for A5 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 199.8 MW for B34 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 199.8 MW for B19 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 199.8 MW for B31-2 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 193.87 MW for C30 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 199.8 MW for B27 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 1106.33 MW for A21 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 1106.33 MW for A32-1 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 199.8 MW for B29 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 1106.33 MW for A18 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 67.85 MW for C5 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 1106.33 MW for AB-2 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 1106.33 MW for AB-3 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 67.85 MW for C13-2 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 193.87 MW for C24 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 193.87 MW for C28 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 387.22 MW for AB-1 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 1106.33 MW for A29 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 387.22 MW for A3 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 193.87 MW for C27 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 279.95 MW for C35 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 1106.33 MW for A25-1 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 69.93 MW for B5 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 69.93 MW for B2 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 199.8 MW for B31-1 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 193.87 MW for C20 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 199.8 MW for B23 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 1106.33 MW for A28 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 1106.33 MW for A19 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 67.85 MW for C9 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 67.85 MW for C1 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 67.85 MW for C2 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 199.8 MW for B25-1 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 387.22 MW for A9 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 67.85 MW for C11 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 193.87 MW for C19 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 193.87 MW for C23 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 193.87 MW for C25-1 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 193.87 MW for C32-2 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 199.8 MW for B20 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 69.93 MW for B9 is outside the expected range (min = 141.0, max = 344.0) MW for Line at a 138.0 kV Voltage level.
+[ Info: rating 193.87 MW for C25-2 is outside the expected range (min = 327.0, max = 797.0) MW for Line at a 230.0 kV Voltage level.
+[ Info: rating 885.07 MW for A17 is outside the expected range (min = 50.0, max = 470.0) MW for Transformer at a 230.0 kV Voltage level.
+[ Info: rating 885.07 MW for A14 is outside the expected range (min = 50.0, max = 470.0) MW for Transformer at a 230.0 kV Voltage level.
+[ Info: rating 885.07 MW for A7 is outside the expected range (min = 50.0, max = 470.0) MW for Transformer at a 230.0 kV Voltage level.
+[ Info: rating 885.07 MW for A16 is outside the expected range (min = 50.0, max = 470.0) MW for Transformer at a 230.0 kV Voltage level.
+[ Info: rating 885.07 MW for A15 is outside the expected range (min = 50.0, max = 470.0) MW for Transformer at a 230.0 kV Voltage level.
+ERROR: LoadError: invalid assignment to constant Main.DEFAULT_UC_MODELS. This redefinition may be permitted using the `const` keyword.
+Stacktrace:
+ [1] top-level scope
+   @ /kfs2/projects/wetoowiroc/jzhang2/PCMLossesModelsBenchmark/5bus_acopf.jl:66
+ [2] include(mod::Module, _path::String)
+   @ Base ./Base.jl:306
+ [3] exec_options(opts::Base.JLOptions)
+   @ Base ./client.jl:317
+ [4] _start()
+   @ Base ./client.jl:550
+in expression starting at /kfs2/projects/wetoowiroc/jzhang2/PCMLossesModelsBenchmark/5bus_acopf.jl:66

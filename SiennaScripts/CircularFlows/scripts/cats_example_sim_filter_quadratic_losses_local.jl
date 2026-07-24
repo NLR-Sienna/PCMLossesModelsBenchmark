@@ -46,7 +46,13 @@ const PSI = PowerSimulations
 cats_json = joinpath(this_path, "..", "..", "..", "Systems", "CATS", "CATS_saved_reduced_sys.json")
 
 highs_milp = PSI.optimizer_with_attributes(HiGHS.Optimizer, "mip_rel_gap" => 0.01)
-xpress_milp = PSI.optimizer_with_attributes(Xpress.Optimizer, "MIPRELSTOP" => 0.05)
+# Xpress is not reliable in every local environment; when its shared library
+# cannot be loaded, fall back to HiGHS for the UC stage instead of aborting.
+uc_milp = try
+    PSI.optimizer_with_attributes(Xpress.Optimizer, "MIPRELSTOP" => 0.05)
+catch
+    highs_milp
+end
 ipopt_nlp  = JuMP.optimizer_with_attributes(() -> Ipopt.Optimizer(),
     "print_level" => 5,
     "hsllib" => HSL_jll.libhsl_path,
@@ -106,7 +112,7 @@ function detect_cats_circular_flows_sim_quad_filtered(
         sys, sys;
         uc_models    = uc_models_filtered,
         ed_models    = ed_models_filtered,
-        uc_optimizer = xpress_milp,
+        uc_optimizer = uc_milp,
         ed_optimizer = ipopt_nlp,
         ptdf_uc      = ptdf,
         ptdf_ed      = ptdf,

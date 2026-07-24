@@ -30,23 +30,27 @@ using Dates
 using DataFrames
 using Logging
 using Xpress
+using Gurobi
 const PNM = PowerNetworkMatrices
 
-include(joinpath(this_path, "..", "mapped_indices.jl"))
-include(joinpath(this_path, "..", "circular_flows.jl"))
-include(joinpath(this_path, "..", "..", "..", "SiennaScripts", "add_hvdc.jl"))
-include(joinpath(this_path, "..", "..", "..", "Systems", "CATS", "build_cats.jl"))
-include(joinpath(this_path, "..", "..", "build_models.jl"))
-include(joinpath(this_path, "..", "..", "build_simulations.jl"))
-include(joinpath(this_path, "..", "..", "utils.jl"))
+include("SiennaScripts/CircularFlows/mapped_indices.jl")
+include("SiennaScripts/CircularFlows/circular_flows.jl")
+include("SiennaScripts/add_hvdc.jl")
+include("Systems/CATS/build_cats.jl")
+include("SiennaScripts/build_models.jl")
+include("SiennaScripts/build_simulations.jl")
+include("SiennaScripts/utils.jl")
 
 const PSY = PowerSystems
 const PSI = PowerSimulations
 
-cats_json = joinpath(this_path, "..", "..", "..", "Systems", "CATS", "CATS_saved_reduced_sys.json")
+cats_json = joinpath(this_path, "Systems", "CATS", "CATS_saved_reduced_sys.json")
 
 highs_milp = PSI.optimizer_with_attributes(HiGHS.Optimizer, "mip_rel_gap" => 0.01)
-xpress_milp = PSI.optimizer_with_attributes(Xpress.Optimizer, "MIPRELSTOP" => 0.05)
+# Xpress is not reliable in every local environment; when its shared library
+# cannot be loaded, fall back to HiGHS for the UC stage instead of aborting.
+uc_milp = PSI.optimizer_with_attributes(Gurobi.Optimizer)
+
 ipopt_nlp  = JuMP.optimizer_with_attributes(() -> Ipopt.Optimizer(),
     "print_level" => 5,
     "hsllib" => HSL_jll.libhsl_path,
@@ -85,7 +89,7 @@ function detect_cats_circular_flows_sim_acopf(
         sys, sys;
         uc_models    = build_cats_uc_models_hv(; voltage_threshold = voltage_threshold, bounded = bounded),
         ed_models    = build_cats_ed_models_acopf(; bounded = bounded),
-        uc_optimizer = xpress_milp,
+        uc_optimizer = uc_milp,
         ed_optimizer = ipopt_nlp,
         ptdf_uc      = ptdf,
         ptdf_ed      = ptdf,

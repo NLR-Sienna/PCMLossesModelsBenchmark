@@ -20,7 +20,7 @@ const DEFAULT_ED_MODELS = Dict(
     HydroDispatch => HydroDispatchRunOfRiver,
 )
 
-const DEFAULT_MILP_OPTIMIZER = (@isdefined Xpress) ? optimizer_with_attributes(Xpress.Optimizer) : nothing
+const DEFAULT_MILP_OPTIMIZER = (@isdefined Gurobi) ? optimizer_with_attributes(Gurobi.Optimizer) : nothing
 
 const DEFAULT_NLP_OPTIMIZER = (@isdefined Ipopt) ? optimizer_with_attributes(Ipopt.Optimizer) : nothing
 
