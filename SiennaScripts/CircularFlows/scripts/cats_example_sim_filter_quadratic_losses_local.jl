@@ -112,7 +112,7 @@ function detect_cats_circular_flows_sim_quad_filtered(
         sys, sys;
         uc_models    = uc_models_filtered,
         ed_models    = ed_models_filtered,
-        uc_optimizer = uc_milp,
+        uc_optimizer = gurobi_milp,
         ed_optimizer = ipopt_nlp,
         ptdf_uc      = ptdf,
         ptdf_ed      = ptdf,

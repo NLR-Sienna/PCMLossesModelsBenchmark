@@ -46,15 +46,16 @@ const RTS_FC_DEVICE_MODELS = Dict(
     TwoTerminalGenericHVDCLine => HVDCTwoTerminalDispatch,
 )
 
-const CAT_UC_MODELS = Dict(
+const CAT_FC_MODELS = Dict(
     Line => StaticBranchBounds,
 #  TapTransformer => StaticBranchBounds,
  #   Transformer2W => StaticBranchBounds,
-    ThermalStandard => ThermalBasicUnitCommitment,
+    ThermalStandard => ThermalBasicDispatch,
     PowerLoad => StaticPowerLoad,
     RenewableDispatch => RenewableFullDispatch,
     TwoTerminalGenericHVDCLine => HVDCTwoTerminalLossless,
     HydroDispatch => HydroDispatchRunOfRiver,
+    HydroReservoir => HydroEnergyModelReservoir,
 )
 
 struct GenerationInvestmentVariable <: PSI.VariableType end
@@ -607,11 +608,13 @@ Existing parallel branches (aggregated `-double_circuit`) are handled automatica
 function build_model_with_flow_canceling_terms(
     sys;
     ignore_pf = true,
-    device_models = CAT_UC_MODELS,
+    device_models = CAT_FC_MODELS,
     optimizer = DEFAULT_MILP_OPTIMIZER,
+    voltage_limit,
 )
     ptdf = PTDF(sys)
     name_to_arc_map = _branch_arc_map(ptdf)
+    ptdf_line_arcs = Set(first.(values(name_to_arc_map[Line])))
 
     network_model = if ignore_pf
         NetworkModel(PTDFPowerModel; PTDF_matrix = ptdf, use_slacks = true)
@@ -629,17 +632,29 @@ function build_model_with_flow_canceling_terms(
         set_device_model!(template, device_type, formulation)
     end
 
+    line_filter = x -> begin
+        arc = (get_number(get_from(get_arc(x))), get_number(get_to(get_arc(x))))
+        arc in ptdf_line_arcs &&
+            (voltage_limit == 0 || get_base_voltage(get_to(x)) >= voltage_limit || get_base_voltage(get_from(x)) >= voltage_limit)
+    end
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch, use_slacks = true, attributes = Dict("filter_function" => line_filter)),
+    )
+
     model = DecisionModel(
         template,
         sys;
         optimizer = optimizer,
-        name = "UC",
+        name = "FC",
         store_variable_names=true,
+        optimizer_solve_log_print = true,
+        calculate_conflict = true,
     )
 
     build!(model; output_dir = mktempdir())
 
-    candidate_lines = get_components(x -> contains(x.name, "candidate"), Line, sys)
+    candidate_lines = get_components(x -> contains(x.name, "candidate") && line_filter(x), Line, sys)
     z_var = add_branch_investment_variables!(model, candidate_lines, Line)
     v_var = add_branch_cancelling_flow_variables!(model, candidate_lines, Line)
     add_bigM_linking_constraints!(model, candidate_lines, Line, z_var, v_var)
@@ -941,22 +956,31 @@ Requires an NLP-capable solver (e.g. Ipopt) because of the quadratic constraints
 function build_model_with_flow_canceling_and_quadratic_losses(
     sys;
     optimizer = optimizer_with_attributes(Gurobi.Optimizer),
-    device_models = RTS_FC_DEVICE_MODELS,
+    device_models = CAT_FC_MODELS,
+    voltage_limit,
 )
     ptdf = PTDF(sys)
     name_to_arc_map = _branch_arc_map(ptdf)
-
+    
     template = ProblemTemplate(NetworkModel(PTDFPowerModel; PTDF_matrix = ptdf, use_slacks = true))
     for (device_type, formulation) in device_models
         set_device_model!(template, device_type, formulation)
+    end
+
+    if voltage_limit != 0
+        arcs_voltage_limit = get_components(x -> get_base_voltage(get_to(x))>= voltage_limit || get_base_voltage(get_from(x))>= voltage_limit, Arc, sys)
+        branch_names_voltage_limit = get_name.(get_components(x -> get_arc(x) in arcs_voltage_limit, Branch, sys))
+        set_device_model!(template, DeviceModel(Line, StaticBranch, use_slacks = true, attributes=Dict("filter_function" => x -> get_name(x) in branch_names_voltage_limit)))
     end
 
     model = DecisionModel(
         template,
         sys;
         optimizer = optimizer,
-        name = "UC_QuadLoss",
+        name = "FC_QuadLoss",
         store_variable_names = true,
+        optimizer_solve_log_print = true,
+        calculate_conflict = true,
     )
 
     build!(model; output_dir = mktempdir())

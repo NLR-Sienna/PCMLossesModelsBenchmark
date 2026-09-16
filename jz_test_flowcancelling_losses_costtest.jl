@@ -46,7 +46,7 @@ sys_inv = build_matpower_5bus_with_updated_lines()
 transform_single_time_series!(sys_inv, Hour(2), Hour(2))
 # Comment an additional phase shifting transformer to avoid an issue with different parallel types in PSI
 set_available!(get_component(PhaseShiftingTransformer, sys_inv, "bus-3-bus-4-i_5"), false)
-sc = "both" #scenario = "parameters" # "parameters", "costs", or "both" (see build_5bus_datacenter_update.jl for details)
+#sc = "both" #scenario = "parameters" # "parameters", "costs", or "both" (see build_5bus_datacenter_update.jl for details)
 
 # Add candidate thermal generators (flagged with ext["is_candidate"] = true)
 # ──► candidate_projects_data  [Systems/5bus/build_5bus.jl:44-99]

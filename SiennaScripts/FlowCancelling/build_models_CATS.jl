@@ -23,7 +23,7 @@ import PowerNetworkMatrices
 
 const PSI = PowerSimulations
 const PSY = PowerSystems
-const M_max = 100.0
+const M_max = 50
 
 # Default device-model dicts used to build the flow-cancelling templates.
 # Branches must use `StaticBranch` so the `FlowRateConstraint` containers (which the
@@ -46,15 +46,16 @@ const RTS_FC_DEVICE_MODELS = Dict(
     TwoTerminalGenericHVDCLine => HVDCTwoTerminalDispatch,
 )
 
-const CAT_UC_MODELS = Dict(
+const CAT_FC_MODELS = Dict(
     Line => StaticBranchBounds,
 #  TapTransformer => StaticBranchBounds,
  #   Transformer2W => StaticBranchBounds,
-    ThermalStandard => ThermalBasicUnitCommitment,
+    ThermalStandard => ThermalBasicDispatch,
     PowerLoad => StaticPowerLoad,
     RenewableDispatch => RenewableFullDispatch,
     TwoTerminalGenericHVDCLine => HVDCTwoTerminalLossless,
     HydroDispatch => HydroDispatchRunOfRiver,
+    HydroReservoir => HydroEnergyModelReservoir,
 )
 
 struct GenerationInvestmentVariable <: PSI.VariableType end
@@ -484,14 +485,13 @@ function add_candidate_line_investment_costs!(decision_model, z_var)
     container  = decision_model.internal.container
     jump_model = PSI.get_jump_model(container)
 
-    candidate_lines = filter(
-        l -> occursin("candidate", get_name(l)),
-        collect(get_components(PSY.Line, sys)),
+    lines_by_name = Dict(
+        get_name(line) => line for line in get_components(PSY.ACBranch, sys)
     )
 
     obj = objective_function(jump_model)
-    for line in candidate_lines
-        name = get_name(line)
+    for name in axes(z_var, 1)
+        line = lines_by_name[name]
         cost = get(get_ext(line), "project_cost", 0.0)
         JuMP.add_to_expression!(obj, cost, z_var[name])
     end
@@ -607,19 +607,29 @@ Existing parallel branches (aggregated `-double_circuit`) are handled automatica
 function build_model_with_flow_canceling_terms(
     sys;
     ignore_pf = true,
-    device_models = CAT_UC_MODELS,
+    device_models = CAT_FC_MODELS,
     optimizer = DEFAULT_MILP_OPTIMIZER,
+    voltage_limit,
 )
-    ptdf = PTDF(sys)
+    ybus = PNM.Ybus(sys; network_reductions = PNM.NetworkReduction[PNM.RadialReduction()])
+    ptdf = PTDF(ybus)
     name_to_arc_map = _branch_arc_map(ptdf)
+    ptdf_line_names = Set(keys(name_to_arc_map[Line]))
+    removed_arcs = PNM.get_removed_arcs(PNM.get_network_reduction_data(ybus))
 
     network_model = if ignore_pf
-        NetworkModel(PTDFPowerModel; PTDF_matrix = ptdf, use_slacks = true)
+        NetworkModel(
+            PTDFPowerModel;
+            PTDF_matrix = ptdf,
+            use_slacks = true,
+            reduce_radial_branches = true,
+        )
     else
         NetworkModel(
             PTDFPowerModel;
             PTDF_matrix = ptdf,
             use_slacks = true,
+            reduce_radial_branches = true,
             power_flow_evaluation = PowerFlows.ACPowerFlow(; calculate_loss_factors = true, calculate_voltage_stability_factors = true),
         )
     end
@@ -629,17 +639,33 @@ function build_model_with_flow_canceling_terms(
         set_device_model!(template, device_type, formulation)
     end
 
+    # Radially-reduced arcs have no entry in PSI's internal branch-by-arc maps, so
+    # any Line on one of those arcs must be excluded from the device model entirely
+    # (name membership in the PTDF's own map is not sufficient to guarantee this).
+    line_filter = x -> begin
+        arc = (get_number(get_from(get_arc(x))), get_number(get_to(get_arc(x))))
+        get_name(x) in ptdf_line_names &&
+            !(arc in removed_arcs) &&
+            (voltage_limit == 0 || get_base_voltage(get_to(get_arc(x))) >= voltage_limit || get_base_voltage(get_from(get_arc(x))) >= voltage_limit)
+    end
+    set_device_model!(
+        template,
+        DeviceModel(Line, StaticBranch, use_slacks = false, attributes = Dict("filter_function" => line_filter)),
+    )
+
     model = DecisionModel(
         template,
         sys;
         optimizer = optimizer,
-        name = "UC",
+        name = "FC",
         store_variable_names=true,
+        optimizer_solve_log_print = true,
+        calculate_conflict = true,
     )
 
     build!(model; output_dir = mktempdir())
 
-    candidate_lines = get_components(x -> contains(x.name, "candidate"), Line, sys)
+    candidate_lines = get_components(x -> contains(x.name, "candidate") && line_filter(x), Line, sys)
     z_var = add_branch_investment_variables!(model, candidate_lines, Line)
     v_var = add_branch_cancelling_flow_variables!(model, candidate_lines, Line)
     add_bigM_linking_constraints!(model, candidate_lines, Line, z_var, v_var)
@@ -722,12 +748,14 @@ end
 """
     _fc_add_ptdf_branch_flow_with_fc_expressions!(model, sys, ptdf, candidate_lines, v_var)
 
-Build PTDFBranchFlowWithFC expression containers for PSY.Line and all existing branch
-types (PSY.PhaseShiftingTransformer, PSY.TapTransformer, PSY.Transformer2W) by augmenting
-PTDFBranchFlow with FC correction terms. Each entry copies PTDFBranchFlow[name,t] and adds:
+Build PTDFBranchFlowWithFC expression containers for PSY.Line, PSY.MonitoredLine, and
+all existing transformer types (PSY.PhaseShiftingTransformer, PSY.TapTransformer,
+PSY.Transformer2W) by augmenting PTDFBranchFlow with FC correction terms. Each entry
+copies PTDFBranchFlow[name,t] and adds:
   existing arc:   + Σ_cand Δ_{name,cand} · v_cand[t]
   candidate arc:  + (Δ_{name,name}−1) · v_name[t] + Σ_{j≠name} Δ_{name,j} · v_j[t]
-Only PSY.Line entries can be candidates; all transformer types always use the existing formula.
+PSY.Line and PSY.MonitoredLine entries can be candidates; transformer types always use
+the existing formula.
 A PTDFBranchFlowWithFC container is created only for branch types whose PTDFBranchFlow
 expression is present in the container.
 """
@@ -738,6 +766,7 @@ function _fc_add_ptdf_branch_flow_with_fc_expressions!(
     candidate_lines,
     v_var,
     name_to_arc_map,
+    quadratic_losses_voltage_limit::Float64 = 0.0,
 )
     container = model.internal.container
     time_steps = PSI.get_time_steps(container)
@@ -748,49 +777,65 @@ function _fc_add_ptdf_branch_flow_with_fc_expressions!(
         for c in candidate_lines
     ]
 
-    # --- PSY.Line expressions ---
-    ptdf_line = PSI.get_expression(container, PTDFBranchFlow(), PSY.Line)
-    line_names = axes(ptdf_line, 1)
+    # --- PSY.Line and PSY.MonitoredLine expressions ---
+    line_expressions = Dict{DataType, Any}()
+    for T in (PSY.Line, PSY.MonitoredLine)
+        key = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlow, T}("")
+        if !haskey(container.expressions, key)
+            continue
+        end
 
-    expr_line = PSI.add_expression_container!(
-        container,
-        PTDFBranchFlowWithFC(),
-        PSY.Line,
-        line_names,
-        time_steps,
-    )
+        ptdf_line = container.expressions[key]
+        line_names = filter(axes(ptdf_line, 1)) do name
+            line = PSY.get_component(T, sys, name)
+            if line === nothing
+                return true  # keep unknown / reduced names as-is; they are not easy to map back
+            end
+            arc = get_arc(line)
+            max(get_base_voltage(get_from(arc)), get_base_voltage(get_to(arc))) >= quadratic_losses_voltage_limit
+        end
 
-    for name in line_names
-        monitored_arc = _resolve_branch_arc(name_to_arc_map, sys, PSY.Line, name)
-        is_candidate = name in candidate_names
-        for t in time_steps
-            expr_line[name, t] = copy(ptdf_line[name, t])
+        expr_line = PSI.add_expression_container!(
+            container,
+            PTDFBranchFlowWithFC(),
+            T,
+            line_names,
+            time_steps,
+        )
 
-            if is_candidate
-                # Candidate arc: self coefficient is (shift - 1), cross coefficient is shift
-                for (cand_name, from_num, to_num) in cand_info
-                    shift = _get_ptdf_shift_term(ptdf, monitored_arc, from_num, to_num)
-                    coeff = cand_name == name ? shift - 1.0 : shift
-                    JuMP.add_to_expression!(expr_line[name, t], coeff, v_var[cand_name, t])
-                end
-            else
-                # Existing arc: each candidate contributes shift · v_cand[t]
-                for (cand_name, from_num, to_num) in cand_info
-                    shift = _get_ptdf_shift_term(ptdf, monitored_arc, from_num, to_num)
-                    JuMP.add_to_expression!(expr_line[name, t], shift, v_var[cand_name, t])
+        for name in line_names
+            monitored_arc = _resolve_branch_arc(name_to_arc_map, sys, T, name)
+            is_candidate = name in candidate_names
+            for t in time_steps
+                expr_line[name, t] = copy(ptdf_line[name, t])
+
+                if is_candidate
+                    # Candidate arc: self coefficient is (shift - 1), cross coefficient is shift
+                    for (cand_name, from_num, to_num) in cand_info
+                        shift = _get_ptdf_shift_term(ptdf, monitored_arc, from_num, to_num)
+                        coeff = cand_name == name ? shift - 1.0 : shift
+                        JuMP.add_to_expression!(expr_line[name, t], coeff, v_var[cand_name, t])
+                    end
+                else
+                    # Existing arc: each candidate contributes shift · v_cand[t]
+                    for (cand_name, from_num, to_num) in cand_info
+                        shift = _get_ptdf_shift_term(ptdf, monitored_arc, from_num, to_num)
+                        JuMP.add_to_expression!(expr_line[name, t], shift, v_var[cand_name, t])
+                    end
                 end
             end
         end
+        line_expressions[T] = expr_line
     end
 
     # --- Existing (non-candidate) branch types ---
-    for T in (PSY.PhaseShiftingTransformer, PSY.TapTransformer, PSY.Transformer2W, PSY.MonitoredLine)
+    for T in (PSY.PhaseShiftingTransformer, PSY.TapTransformer, PSY.Transformer2W)
         _add_existing_branch_fc_expressions!(
             container, T, time_steps, ptdf, sys, cand_info, v_var, name_to_arc_map,
         )
     end
 
-    return expr_line
+    return line_expressions
 end
 
 """
@@ -873,8 +918,9 @@ Add quadratic loss constraints using the PTDFBranchFlowWithFC expressions:
     loss[ref_bus, t] == -Σ_l R_l · FC_flow[l,t]² - Σ_{non-line branches} R_b · FC_flow[b,t]²
 
 where FC_flow is the PTDFBranchFlowWithFC expression (PTDF flow + FC correction terms).
-Covers PSY.Line and all transformer types (PhaseShiftingTransformer, TapTransformer,
-Transformer2W) for which a PTDFBranchFlowWithFC expression exists in the container.
+Covers PSY.Line, PSY.MonitoredLine, and all transformer types (PhaseShiftingTransformer,
+TapTransformer, Transformer2W) for which a PTDFBranchFlowWithFC expression exists in
+the container.
 Resistances are keyed by reduced axis name (parallel-aggregated where needed).
 No voltage scaling is applied — suitable when a flat voltage profile is assumed.
 """
@@ -893,30 +939,32 @@ function _fc_add_quadratic_loss_constraints!(model::PSI.DecisionModel, sys::PSY.
         time_steps,
     )
 
-    fc_line = PSI.get_expression(container, PTDFBranchFlowWithFC(), PSY.Line)
-    line_names = axes(fc_line, 1)
-    R_line = _resistance_by_reduced_name(sys, PSY.Line, line_names, ptdf)
-
-    # Collect (fc_expr, R_dict) for each non-Line branch type with FC expressions
-    other_branch_type_data = []
-    for T in (PSY.PhaseShiftingTransformer, PSY.TapTransformer, PSY.Transformer2W)
+    # Collect (FC expression, resistance map) for both line types and all supported
+    # transformer types that have FC expressions in the optimization container.
+    branch_type_data = []
+    for T in (
+    #    PSY.Line,
+        PSY.MonitoredLine,
+    #    PSY.PhaseShiftingTransformer,
+    #    PSY.TapTransformer,
+    #    PSY.Transformer2W,
+    )
         key = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlowWithFC, T}("")
         if !haskey(container.expressions, key)
             continue
         end
         fc = container.expressions[key]
         R_dict = _resistance_by_reduced_name(sys, T, axes(fc, 1), ptdf)
-        push!(other_branch_type_data, (fc, R_dict))
+        push!(branch_type_data, (fc, R_dict))
     end
 
     for ref_bus in ref_buses, t in time_steps
         constraint[ref_bus, t] = JuMP.@constraint(
             PSI.get_jump_model(container),
             loss_variable[ref_bus, t] ==
-            -sum(R_line[name] * fc_line[name, t]^2 for name in line_names) -
-            sum(
+            -sum(
                 R_dict[name] * fc[name, t]^2
-                for (fc, R_dict) in other_branch_type_data
+                for (fc, R_dict) in branch_type_data
                 for name in axes(fc, 1);
                 init = 0.0,
             )
@@ -941,22 +989,31 @@ Requires an NLP-capable solver (e.g. Ipopt) because of the quadratic constraints
 function build_model_with_flow_canceling_and_quadratic_losses(
     sys;
     optimizer = optimizer_with_attributes(Gurobi.Optimizer),
-    device_models = RTS_FC_DEVICE_MODELS,
+    device_models = CAT_FC_MODELS,
+    voltage_limit,
 )
     ptdf = PTDF(sys)
     name_to_arc_map = _branch_arc_map(ptdf)
-
+    
     template = ProblemTemplate(NetworkModel(PTDFPowerModel; PTDF_matrix = ptdf, use_slacks = true))
     for (device_type, formulation) in device_models
         set_device_model!(template, device_type, formulation)
+    end
+
+    if voltage_limit != 0
+        arcs_voltage_limit = get_components(x -> get_base_voltage(get_to(x))>= voltage_limit || get_base_voltage(get_from(x))>= voltage_limit, Arc, sys)
+        branch_names_voltage_limit = get_name.(get_components(x -> get_arc(x) in arcs_voltage_limit, Branch, sys))
+        set_device_model!(template, DeviceModel(Line, StaticBranch, use_slacks = true, attributes=Dict("filter_function" => x -> get_name(x) in branch_names_voltage_limit)))
     end
 
     model = DecisionModel(
         template,
         sys;
         optimizer = optimizer,
-        name = "UC_QuadLoss",
+        name = "FC_QuadLoss",
         store_variable_names = true,
+        optimizer_solve_log_print = true,
+        calculate_conflict = true,
     )
 
     build!(model; output_dir = mktempdir())
@@ -976,7 +1033,7 @@ function build_model_with_flow_canceling_and_quadratic_losses(
         model, sys, candidate_lines, Line, z_var, v_var, ptdf, name_to_arc_map,
     )
     add_candidate_line_investment_costs!(model, z_var)
-    add_candidate_generation_investment_constraints!(model, ThermalStandard)
+#    add_candidate_generation_investment_constraints!(model, ThermalStandard)
 
     # --- Quadratic loss approximation ---
     loss_var = _fc_add_loss_variables!(model)

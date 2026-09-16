@@ -1,0 +1,1299 @@
+Set parameter TokenServer to value "10.60.1.73"
+Set parameter OutputFlag to value 1
+Set parameter OutputFlag to value 1
+Warning for adding constraints: zero or small (< 1e-13) coefficients, ignored
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Red Hat Enterprise Linux 8.8 (Ootpa)")
+
+CPU model: Intel(R) Xeon(R) Platinum 8470Q, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 104 physical cores, 104 logical processors, using up to 32 threads
+
+Optimize a model with 11484 rows, 8414 columns and 7983084 nonzeros (Min)
+Model fingerprint: 0x65dcffe1
+Model has 8322 linear objective coefficients
+Coefficient statistics:
+  Matrix range     [2e-10, 1e+00]
+  Objective range  [1e+00, 1e+06]
+  Bounds range     [1e-03, 1e+01]
+  RHS range        [3e-04, 5e+02]
+
+Presolve removed 11481 rows and 8409 columns
+Presolve time: 0.43s
+Presolved: 3 rows, 5 columns, 6 nonzeros
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    1.1094652e+08   5.506776e-02   0.000000e+00      0s
+       1    1.1095754e+08   0.000000e+00   0.000000e+00      1s
+
+Solved in 1 iterations and 0.70 seconds (1.22 work units)
+Optimal objective  1.109575359e+08
+
+User-callback calls 31, time in user-callback 0.00 sec
+i = 1
+     Arc bus-1951 -> bus-2835 is a radial arc.
+    Line: bus-1951-bus-2835-i_980 - Arc: bus-1951 -> bus-2835
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: true
+i = 2
+     Arc bus-2835 -> bus-7636 is not a radial arc.
+    Line: bus-2835-bus-7636-i_1912 - Arc: bus-2835 -> bus-7636
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 2
+i = 3
+     Arc bus-1951 -> bus-2835 is a radial arc.
+    Line: bus-1951-bus-2835-i_980 - Arc: bus-1951 -> bus-2835
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: true
+i = 4
+     Arc bus-7636 -> bus-4209 is not a radial arc.
+    Line: bus-7636-bus-4209-i_2083 - Arc: bus-7636 -> bus-4209
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 3
+i = 5
+     Arc bus-4209 -> bus-8268 is not a radial arc.
+    Line: bus-4209-bus-8268-i_2084 - Arc: bus-4209 -> bus-8268
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 4
+i = 6
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-2805-bus-2806-i_89double_circuit
+     Selecting line with highest rating: bus-2805-bus-2806-i_892
+     Arc bus-2805 -> bus-2806 is not a radial arc.
+    Line: bus-2805-bus-2806-i_89double_circuit - Arc: bus-2805 -> bus-2806
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 5
+i = 7
+i = 8
+     Arc bus-2805 -> bus-7927 is not a radial arc.
+    Line: bus-2805-bus-7927-i_10033 - Arc: bus-2805 -> bus-7927
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 6
+i = 9
+     Arc bus-7636 -> bus-2806 is not a radial arc.
+    Line: bus-7636-bus-2806-i_10037 - Arc: bus-7636 -> bus-2806
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 7
+i = 10
+i = 11
+i = 12
+i = 13
+i = 14
+i = 15
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-8782-bus-2652-i_52double_circuit
+     Selecting line with highest rating: bus-8782-bus-2652-i_524
+     Arc bus-8782 -> bus-2652 is not a radial arc.
+    Line: bus-8782-bus-2652-i_52double_circuit - Arc: bus-8782 -> bus-2652
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 8
+i = 16
+i = 17
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-3436-bus-3437-i_21double_circuit
+     Selecting line with highest rating: bus-3436-bus-3437-i_2145
+     Arc bus-3436 -> bus-3437 is not a radial arc.
+    Line: bus-3436-bus-3437-i_21double_circuit - Arc: bus-3436 -> bus-3437
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 9
+i = 18
+i = 19
+     Arc bus-2668 -> bus-8730 is not a radial arc.
+    Line: bus-2668-bus-8730-i_572 - Arc: bus-2668 -> bus-8730
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 10
+i = 20
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-7747-bus-7709-i_479double_circuit
+     Selecting line with highest rating: bus-7747-bus-7709-i_4794
+     Arc bus-7747 -> bus-7709 is not a radial arc.
+    Line: bus-7747-bus-7709-i_479double_circuit - Arc: bus-7747 -> bus-7709
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 11
+i = 21
+i = 22
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-3307-bus-3306-i_191double_circuit
+     Selecting line with highest rating: bus-3307-bus-3306-i_1914
+     Arc bus-3307 -> bus-3306 is not a radial arc.
+    Line: bus-3307-bus-3306-i_191double_circuit - Arc: bus-3307 -> bus-3306
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 12
+i = 23
+i = 24
+     Arc bus-8854 -> bus-3307 is not a radial arc.
+    Line: bus-8854-bus-3307-i_1916 - Arc: bus-8854 -> bus-3307
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 13
+i = 25
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-8113-bus-4773-i_473double_circuit
+     Selecting line with highest rating: bus-8113-bus-4773-i_4734
+     Arc bus-8113 -> bus-4773 is not a radial arc.
+    Line: bus-8113-bus-4773-i_473double_circuit - Arc: bus-8113 -> bus-4773
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 14
+i = 26
+i = 27
+i = 28
+     Arc bus-6574 -> bus-8094 is not a radial arc.
+    Line: bus-6574-bus-8094-i_4801 - Arc: bus-6574 -> bus-8094
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 15
+i = 29
+i = 30
+i = 31
+     Arc bus-7725 -> bus-4803 is not a radial arc.
+    Line: bus-7725-bus-4803-i_4805 - Arc: bus-7725 -> bus-4803
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 16
+i = 32
+i = 33
+     Arc bus-3409 -> bus-3410 is not a radial arc.
+    Line: bus-3409-bus-3410-i_2095 - Arc: bus-3409 -> bus-3410
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 17
+i = 34
+     Arc bus-3410 -> bus-3411 is not a radial arc.
+    Line: bus-3410-bus-3411-i_2096 - Arc: bus-3410 -> bus-3411
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 18
+i = 35
+     Arc bus-3411 -> bus-4355 is not a radial arc.
+    Line: bus-3411-bus-4355-i_10060 - Arc: bus-3411 -> bus-4355
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 19
+i = 36
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-3409-bus-3412-i_209double_circuit
+     Selecting line with highest rating: bus-3409-bus-3412-i_2097
+     Arc bus-3409 -> bus-3412 is not a radial arc.
+    Line: bus-3409-bus-3412-i_209double_circuit - Arc: bus-3409 -> bus-3412
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 20
+i = 37
+     Arc bus-3413 -> bus-3412 is not a radial arc.
+    Line: bus-3413-bus-3412-i_2099 - Arc: bus-3413 -> bus-3412
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 21
+i = 38
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-3413-bus-3414-i_210double_circuit
+     Selecting line with highest rating: bus-3413-bus-3414-i_2100
+     Arc bus-3413 -> bus-3414 is not a radial arc.
+    Line: bus-3413-bus-3414-i_210double_circuit - Arc: bus-3413 -> bus-3414
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 22
+i = 39
+     Arc bus-3415 -> bus-3414 is not a radial arc.
+    Line: bus-3415-bus-3414-i_2102 - Arc: bus-3415 -> bus-3414
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 23
+i = 40
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-3415-bus-3416-i_210double_circuit
+     Selecting line with highest rating: bus-3415-bus-3416-i_2104
+     Arc bus-3415 -> bus-3416 is not a radial arc.
+    Line: bus-3415-bus-3416-i_210double_circuit - Arc: bus-3415 -> bus-3416
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 24
+i = 41
+     Arc bus-4411 -> bus-3416 is not a radial arc.
+    Line: bus-4411-bus-3416-i_2106 - Arc: bus-4411 -> bus-3416
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 25
+i = 42
+i = 43
+i = 44
+i = 45
+i = 46
+i = 47
+i = 48
+i = 49
+i = 50
+i = 51
+     Arc bus-7690 -> bus-2668 is not a radial arc.
+    Line: bus-7690-bus-2668-i_542 - Arc: bus-7690 -> bus-2668
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 26
+i = 52
+     Arc bus-8617 -> bus-8854 is not a radial arc.
+    Line: bus-8617-bus-8854-i_1915 - Arc: bus-8617 -> bus-8854
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 27
+i = 53
+     Arc bus-4802 -> bus-6574 is not a radial arc.
+    Line: bus-4802-bus-6574-i_4800 - Arc: bus-4802 -> bus-6574
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 28
+i = 54
+i = 55
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-3337-bus-7679-i_196double_circuit
+     Selecting line with highest rating: bus-3337-bus-7679-i_1961
+     Arc bus-3337 -> bus-7679 is not a radial arc.
+    Line: bus-3337-bus-7679-i_196double_circuit - Arc: bus-3337 -> bus-7679
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 29
+i = 56
+i = 57
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-2627-bus-7974-i_47double_circuit
+     Selecting line with highest rating: bus-2627-bus-7974-i_472
+     Arc bus-2627 -> bus-7974 is not a radial arc.
+    Line: bus-2627-bus-7974-i_47double_circuit - Arc: bus-2627 -> bus-7974
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 30
+i = 58
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-8727-bus-6811-i_8double_circuit
+     Selecting line with highest rating: bus-8727-bus-6811-i_8414
+     Arc bus-8727 -> bus-6811 is not a radial arc.
+    Line: bus-8727-bus-6811-i_8double_circuit - Arc: bus-8727 -> bus-6811
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 31
+i = 59
+     Arc bus-3123 -> bus-3122 is not a radial arc.
+    Line: bus-3123-bus-3122-i_2001 - Arc: bus-3123 -> bus-3122
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 32
+i = 60
+i = 61
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-2629-bus-7974-i_47double_circuit
+     Selecting line with highest rating: bus-2629-bus-7974-i_476
+     Arc bus-2629 -> bus-7974 is not a radial arc.
+    Line: bus-2629-bus-7974-i_47double_circuit - Arc: bus-2629 -> bus-7974
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 33
+i = 62
+i = 63
+i = 64
+Warning: Multiple branches found in the original network corresponding to reduced network line name bus-4725-bus-8735-i_46double_circuit
+     Selecting line with highest rating: bus-4725-bus-8735-i_4641
+     Arc bus-4725 -> bus-8735 is not a radial arc.
+    Line: bus-4725-bus-8735-i_46double_circuit - Arc: bus-4725 -> bus-8735
+         From bus voltage: 230.0 kV - To bus voltage: 230.0 kV
+         Is radial arc: false
+    Number line: 34
+i = 65
+i = 66
+1
+Branch buses: (2835, 7636)
+   FOUND, count = 1
+   j = 8405
+   Found bus number: 8405 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+2
+Branch buses: (7636, 4209)
+   FOUND, count = 3
+   j = 1183
+   Found bus number: 1183 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 7
+   j = 1970
+   Found bus number: 1970 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+3
+Branch buses: (4209, 8268)
+   FOUND, count = 2
+   j = 7707
+   Found bus number: 7707 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+4
+Branch buses: (2805, 2806)
+   FOUND, count = 7
+   j = 1937
+   Found bus number: 1937 - Type: ACBusTypes.PV = 2 - Connected generators: 5
+   FOUND, count = 12
+   j = 282
+   Found bus number: 282 - Type: ACBusTypes.PV = 2 - Connected generators: 4
+   FOUND, count = 16
+   j = 1926
+   Found bus number: 1926 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 26
+   j = 8355
+   Found bus number: 8355 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+5
+Branch buses: (2805, 7927)
+   FOUND, count = 29
+   j = 243
+   Found bus number: 243 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 52
+   j = 1665
+   Found bus number: 1665 - Type: ACBusTypes.PV = 2 - Connected generators: 8
+   FOUND, count = 72
+   j = 248
+   Found bus number: 248 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+6
+Branch buses: (7636, 2806)
+   FOUND, count = 75
+   j = 239
+   Found bus number: 239 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 76
+   j = 1666
+   Found bus number: 1666 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 97
+   j = 226
+   Found bus number: 226 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+7
+Branch buses: (8782, 2652)
+   FOUND, count = 6
+   j = 8102
+   Found bus number: 8102 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 20
+   j = 347
+   Found bus number: 347 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+8
+Branch buses: (3436, 3437)
+   FOUND, count = 1
+   j = 8659
+   Found bus number: 8659 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 28
+   j = 1487
+   Found bus number: 1487 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 33
+   j = 8045
+   Found bus number: 8045 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 145
+   j = 2250
+   Found bus number: 2250 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 157
+   j = 1762
+   Found bus number: 1762 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 179
+   j = 7679
+   Found bus number: 7679 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+9
+Branch buses: (2668, 8730)
+   FOUND, count = 23
+   j = 1699
+   Found bus number: 1699 - Type: ACBusTypes.PV = 2 - Connected generators: 6
+   FOUND, count = 34
+   j = 8094
+   Found bus number: 8094 - Type: ACBusTypes.PV = 2 - Connected generators: 4
+   FOUND, count = 49
+   j = 458
+   Found bus number: 458 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 59
+   j = 492
+   Found bus number: 492 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+10
+Branch buses: (7747, 7709)
+   FOUND, count = 14
+   j = 467
+   Found bus number: 467 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+   FOUND, count = 93
+   j = 2215
+   Found bus number: 2215 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 131
+   j = 545
+   Found bus number: 545 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 203
+   j = 483
+   Found bus number: 483 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 233
+   j = 1945
+   Found bus number: 1945 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+11
+Branch buses: (3307, 3306)
+   FOUND, count = 10
+   j = 1835
+   Found bus number: 1835 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+12
+Branch buses: (8854, 3307)
+   FOUND, count = 26
+   j = 1186
+   Found bus number: 1186 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 47
+   j = 8843
+   Found bus number: 8843 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+13
+Branch buses: (8113, 4773)
+   FOUND, count = 1
+   j = 2401
+   Found bus number: 2401 - Type: ACBusTypes.PV = 2 - Connected generators: 11
+   FOUND, count = 7
+   j = 393
+   Found bus number: 393 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 28
+   j = 559
+   Found bus number: 559 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 82
+   j = 2217
+   Found bus number: 2217 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+14
+Branch buses: (6574, 8094)
+   FOUND, count = 72
+   j = 7773
+   Found bus number: 7773 - Type: ACBusTypes.PV = 2 - Connected generators: 6
+15
+Branch buses: (7725, 4803)
+   FOUND, count = 86
+   j = 8730
+   Found bus number: 8730 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+   FOUND, count = 251
+   j = 346
+   Found bus number: 346 - Type: ACBusTypes.PV = 2 - Connected generators: 8
+   FOUND, count = 257
+   j = 1702
+   Found bus number: 1702 - Type: ACBusTypes.PV = 2 - Connected generators: 4
+16
+Branch buses: (3409, 3410)
+   FOUND, count = 1
+   j = 2107
+   Found bus number: 2107 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+   FOUND, count = 18
+   j = 2208
+   Found bus number: 2208 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+17
+Branch buses: (3410, 3411)
+   FOUND, count = 88
+   j = 1298
+   Found bus number: 1298 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 188
+   j = 1499
+   Found bus number: 1499 - Type: ACBusTypes.PV = 2 - Connected generators: 6
+18
+Branch buses: (3411, 4355)
+   FOUND, count = 201
+   j = 175
+   Found bus number: 175 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+   FOUND, count = 214
+   j = 159
+   Found bus number: 159 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 219
+   j = 170
+   Found bus number: 170 - Type: ACBusTypes.PV = 2 - Connected generators: 10
+19
+Branch buses: (3409, 3412)
+   FOUND, count = 224
+   j = 165
+   Found bus number: 165 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 276
+   j = 1284
+   Found bus number: 1284 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 281
+   j = 1402
+   Found bus number: 1402 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+20
+Branch buses: (3413, 3412)
+   FOUND, count = 283
+   j = 1399
+   Found bus number: 1399 - Type: ACBusTypes.PV = 2 - Connected generators: 16
+   FOUND, count = 297
+   j = 1571
+   Found bus number: 1571 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+21
+Branch buses: (3413, 3414)
+   FOUND, count = 352
+   j = 155
+   Found bus number: 155 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 386
+   j = 1320
+   Found bus number: 1320 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 387
+   j = 8704
+   Found bus number: 8704 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+   FOUND, count = 430
+   j = 7892
+   Found bus number: 7892 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 607
+   j = 1348
+   Found bus number: 1348 - Type: ACBusTypes.PV = 2 - Connected generators: 4
+   FOUND, count = 619
+   j = 1344
+   Found bus number: 1344 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+22
+Branch buses: (3415, 3414)
+   FOUND, count = 625
+   j = 68
+   Found bus number: 68 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+23
+Branch buses: (3415, 3416)
+   FOUND, count = 655
+   j = 1333
+   Found bus number: 1333 - Type: ACBusTypes.PV = 2 - Connected generators: 8
+24
+Branch buses: (4411, 3416)
+   FOUND, count = 665
+   j = 582
+   Found bus number: 582 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+   FOUND, count = 713
+   j = 8032
+   Found bus number: 8032 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 719
+   j = 46
+   Found bus number: 46 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 733
+   j = 43
+   Found bus number: 43 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+   FOUND, count = 740
+   j = 2116
+   Found bus number: 2116 - Type: ACBusTypes.PV = 2 - Connected generators: 4
+   FOUND, count = 743
+   j = 1326
+   Found bus number: 1326 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 762
+   j = 1578
+   Found bus number: 1578 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 774
+   j = 1389
+   Found bus number: 1389 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+   FOUND, count = 784
+   j = 2117
+   Found bus number: 2117 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+   FOUND, count = 797
+   j = 659
+   Found bus number: 659 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+25
+Branch buses: (7690, 2668)
+   FOUND, count = 131
+   j = 519
+   Found bus number: 519 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+26
+Branch buses: (8617, 8854)
+   FOUND, count = 50
+   j = 274
+   Found bus number: 274 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 54
+   j = 8239
+   Found bus number: 8239 - Type: ACBusTypes.PV = 2 - Connected generators: 4
+   FOUND, count = 62
+   j = 236
+   Found bus number: 236 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+27
+Branch buses: (4802, 6574)
+   FOUND, count = 268
+   j = 554
+   Found bus number: 554 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 277
+   j = 8572
+   Found bus number: 8572 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 279
+   j = 1700
+   Found bus number: 1700 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+28
+Branch buses: (3337, 7679)
+   FOUND, count = 295
+   j = 1330
+   Found bus number: 1330 - Type: ACBusTypes.PV = 2 - Connected generators: 5
+   FOUND, count = 335
+   j = 1904
+   Found bus number: 1904 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+29
+Branch buses: (2627, 7974)
+   FOUND, count = 2
+   j = 8018
+   Found bus number: 8018 - Type: ACBusTypes.PV = 2 - Connected generators: 5
+   FOUND, count = 14
+   j = 2080
+   Found bus number: 2080 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+30
+Branch buses: (8727, 6811)
+   FOUND, count = 14
+   j = 1557
+   Found bus number: 1557 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+   FOUND, count = 16
+   j = 1116
+   Found bus number: 1116 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 17
+   j = 1123
+   Found bus number: 1123 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 25
+   j = 1081
+   Found bus number: 1081 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 29
+   j = 1521
+   Found bus number: 1521 - Type: ACBusTypes.PV = 2 - Connected generators: 4
+31
+Branch buses: (3123, 3122)
+   FOUND, count = 26
+   j = 2158
+   Found bus number: 2158 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 31
+   j = 7823
+   Found bus number: 7823 - Type: ACBusTypes.PV = 2 - Connected generators: 5
+32
+Branch buses: (2629, 7974)
+   FOUND, count = 27
+   j = 344
+   Found bus number: 344 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+   FOUND, count = 69
+   j = 360
+   Found bus number: 360 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 72
+   j = 539
+   Found bus number: 539 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 86
+   j = 348
+   Found bus number: 348 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 88
+   j = 8832
+   Found bus number: 8832 - Type: ACBusTypes.PV = 2 - Connected generators: 8
+   FOUND, count = 109
+   j = 481
+   Found bus number: 481 - Type: ACBusTypes.PV = 2 - Connected generators: 3
+33
+Branch buses: (4725, 8735)
+   FOUND, count = 4
+   j = 2000
+   Found bus number: 2000 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 9
+   j = 1847
+   Found bus number: 1847 - Type: ACBusTypes.PV = 2 - Connected generators: 2
+   FOUND, count = 13
+   j = 1035
+   Found bus number: 1035 - Type: ACBusTypes.PV = 2 - Connected generators: 1
+   FOUND, count = 47
+   j = 1006
+   Found bus number: 1006 - Type: ACBusTypes.PV = 2 - Connected generators: 6
+Selected generator: gen-1585 at bus 8405
+     Generator type: RenewableDispatch
+Selected generator: gen-1383 at bus 1183
+     Generator type: RenewableDispatch
+Selected generator: gen-1805 at bus 1970
+     Generator type: RenewableDispatch
+Selected generator: gen-886 at bus 7707
+     Generator type: ThermalStandard
+Selected generator: gen-828 at bus 1937
+     Generator type: ThermalStandard
+Selected generator: gen-824 at bus 282
+     Generator type: ThermalStandard
+Selected generator: gen-2028 at bus 1926
+     Generator type: RenewableDispatch
+Selected generator: gen-2027 at bus 8355
+     Generator type: RenewableDispatch
+Selected generator: gen-457 at bus 243
+     Generator type: ThermalStandard
+Selected generator: gen-580 at bus 1665
+     Generator type: ThermalStandard
+Selected generator: gen-632 at bus 248
+     Generator type: ThermalStandard
+Selected generator: gen-628 at bus 239
+     Generator type: ThermalStandard
+Selected generator: gen-631 at bus 1666
+     Generator type: ThermalStandard
+Selected generator: gen-1641 at bus 226
+     Generator type: RenewableDispatch
+Selected generator: gen-1354 at bus 8102
+     Generator type: RenewableDispatch
+Selected generator: gen-2039 at bus 347
+     Generator type: ThermalStandard
+Selected generator: gen-2061 at bus 8659
+     Generator type: ThermalStandard
+Selected generator: gen-1783 at bus 1487
+     Generator type: RenewableDispatch
+Selected generator: gen-1660 at bus 8045
+     Generator type: RenewableDispatch
+Selected generator: gen-342 at bus 2250
+     Generator type: ThermalStandard
+Selected generator: gen-406 at bus 1762
+     Generator type: ThermalStandard
+Selected generator: gen-2002 at bus 7679
+     Generator type: RenewableDispatch
+Selected generator: gen-477 at bus 1699
+     Generator type: ThermalStandard
+Selected generator: gen-1368 at bus 8094
+     Generator type: ThermalStandard
+Selected generator: gen-1476 at bus 458
+     Generator type: ThermalStandard
+Selected generator: gen-2068 at bus 492
+     Generator type: ThermalStandard
+Selected generator: gen-661 at bus 467
+     Generator type: ThermalStandard
+Selected generator: gen-1483 at bus 2215
+     Generator type: ThermalStandard
+Selected generator: gen-2067 at bus 545
+     Generator type: ThermalStandard
+Selected generator: gen-703 at bus 483
+     Generator type: ThermalStandard
+Selected generator: gen-1182 at bus 1945
+     Generator type: RenewableDispatch
+Selected generator: gen-1976 at bus 1835
+     Generator type: RenewableDispatch
+Selected generator: gen-972 at bus 1186
+     Generator type: ThermalStandard
+Selected generator: gen-1511 at bus 8843
+     Generator type: ThermalStandard
+Selected generator: gen-226 at bus 2401
+     Generator type: ThermalStandard
+Selected generator: gen-2094 at bus 393
+     Generator type: RenewableDispatch
+Selected generator: gen-1297 at bus 559
+     Generator type: ThermalStandard
+Selected generator: gen-924 at bus 2217
+     Generator type: ThermalStandard
+Selected generator: gen-235 at bus 7773
+     Generator type: ThermalStandard
+Selected generator: gen-1936 at bus 8730
+     Generator type: ThermalStandard
+Selected generator: gen-219 at bus 346
+     Generator type: ThermalStandard
+Selected generator: gen-1179 at bus 1702
+     Generator type: RenewableDispatch
+Selected generator: gen-1004 at bus 2107
+     Generator type: ThermalStandard
+Selected generator: gen-1012 at bus 2208
+     Generator type: RenewableDispatch
+Selected generator: gen-992 at bus 1298
+     Generator type: ThermalStandard
+Selected generator: gen-399 at bus 1499
+     Generator type: ThermalStandard
+Selected generator: gen-562 at bus 175
+     Generator type: ThermalStandard
+Selected generator: gen-540 at bus 159
+     Generator type: ThermalStandard
+Selected generator: gen-45 at bus 170
+     Generator type: ThermalStandard
+Selected generator: gen-452 at bus 165
+     Generator type: ThermalStandard
+Selected generator: gen-1658 at bus 1284
+     Generator type: RenewableDispatch
+Selected generator: gen-1421 at bus 1402
+     Generator type: RenewableDispatch
+Selected generator: gen-964 at bus 1399
+     Generator type: ThermalStandard
+Selected generator: gen-479 at bus 1571
+     Generator type: ThermalStandard
+Selected generator: gen-1833 at bus 155
+     Generator type: RenewableDispatch
+Selected generator: gen-1063 at bus 1320
+     Generator type: RenewableDispatch
+Selected generator: gen-848 at bus 8704
+     Generator type: ThermalStandard
+Selected generator: gen-1643 at bus 7892
+     Generator type: RenewableDispatch
+Selected generator: gen-1670 at bus 1348
+     Generator type: ThermalStandard
+Selected generator: gen-2003 at bus 1344
+     Generator type: RenewableDispatch
+Selected generator: gen-610 at bus 68
+     Generator type: ThermalStandard
+Selected generator: gen-1826 at bus 1333
+     Generator type: ThermalStandard
+Selected generator: gen-1728 at bus 582
+     Generator type: ThermalStandard
+Selected generator: gen-870 at bus 8032
+     Generator type: ThermalStandard
+Selected generator: gen-1311 at bus 46
+     Generator type: ThermalStandard
+Selected generator: gen-1608 at bus 43
+     Generator type: ThermalStandard
+Selected generator: gen-2047 at bus 2116
+     Generator type: RenewableDispatch
+Selected generator: gen-891 at bus 1326
+     Generator type: ThermalStandard
+Selected generator: gen-1378 at bus 1578
+     Generator type: RenewableDispatch
+Selected generator: gen-821 at bus 1389
+     Generator type: ThermalStandard
+Selected generator: gen-1470 at bus 2117
+     Generator type: ThermalStandard
+Selected generator: gen-1328 at bus 659
+     Generator type: ThermalStandard
+Selected generator: gen-705 at bus 519
+     Generator type: ThermalStandard
+Selected generator: gen-514 at bus 274
+     Generator type: ThermalStandard
+Selected generator: gen-721 at bus 8239
+     Generator type: ThermalStandard
+Selected generator: gen-2024 at bus 236
+     Generator type: ThermalStandard
+Selected generator: gen-642 at bus 554
+     Generator type: ThermalStandard
+Selected generator: gen-1716 at bus 8572
+     Generator type: ThermalStandard
+Selected generator: gen-465 at bus 1700
+     Generator type: ThermalStandard
+Selected generator: gen-892 at bus 1330
+     Generator type: ThermalStandard
+Selected generator: gen-1502 at bus 1904
+     Generator type: ThermalStandard
+Selected generator: gen-243 at bus 8018
+     Generator type: ThermalStandard
+Selected generator: gen-2029 at bus 2080
+     Generator type: RenewableDispatch
+Selected generator: gen-746 at bus 1557
+     Generator type: ThermalStandard
+Selected generator: gen-769 at bus 1116
+     Generator type: ThermalStandard
+Selected generator: gen-696 at bus 1123
+     Generator type: ThermalStandard
+Selected generator: gen-2080 at bus 1081
+     Generator type: RenewableDispatch
+Selected generator: gen-1846 at bus 1521
+     Generator type: RenewableDispatch
+Selected generator: gen-1064 at bus 2158
+     Generator type: ThermalStandard
+Selected generator: gen-990 at bus 7823
+     Generator type: ThermalStandard
+Selected generator: gen-1177 at bus 344
+     Generator type: RenewableDispatch
+Selected generator: gen-526 at bus 360
+     Generator type: ThermalStandard
+Selected generator: gen-726 at bus 539
+     Generator type: ThermalStandard
+Selected generator: gen-1467 at bus 348
+     Generator type: RenewableDispatch
+Selected generator: gen-1531 at bus 8832
+     Generator type: ThermalStandard
+Selected generator: gen-1181 at bus 481
+     Generator type: RenewableDispatch
+Selected generator: gen-1050 at bus 2000
+     Generator type: RenewableDispatch
+Selected generator: gen-691 at bus 1847
+     Generator type: ThermalStandard
+Selected generator: gen-1372 at bus 1035
+     Generator type: RenewableDispatch
+Selected generator: gen-1438 at bus 1006
+     Generator type: ThermalStandard
+Number of generators selected for duplication: 100
+Number of gens before adding: 2123
+Adding new generator: gen-1585_candidate with max active power: 9.86359911135095 MW
+get_rating(gen): 10.38273590668521
+get_rating(gen): 10.38273590668521
+get_rating(new_gen): 10.38273590668521
+gen name: gen-1585
+     rating: 10.38273590668521
+     power factor: 0.95
+     rating * power factor: 9.86359911135095
+Adding new generator: gen-1383_candidate with max active power: 9.717984255426169 MW
+get_rating(gen): 10.229457110974915
+get_rating(gen): 10.229457110974915
+get_rating(new_gen): 10.229457110974916
+gen name: gen-1383
+     rating: 10.229457110974916
+     power factor: 0.95
+     rating * power factor: 9.71798425542617
+Adding new generator: gen-1805_candidate with max active power: 9.801457644679418 MW
+get_rating(gen): 10.317323836504652
+get_rating(gen): 10.317323836504652
+get_rating(new_gen): 10.317323836504652
+gen name: gen-1805
+     rating: 10.317323836504652
+     power factor: 0.95
+     rating * power factor: 9.801457644679418
+Adding new generator: gen-886_candidate with max active power: 49.0 MW
+get_rating(gen): 57.66420033261538
+Adding new generator: gen-828_candidate with max active power: 167.7 MW
+get_rating(gen): 167.7
+Adding new generator: gen-824_candidate with max active power: 300.0 MW
+get_rating(gen): 319.15389704655024
+Adding new generator: gen-2028_candidate with max active power: 9.841396025431752 MW
+get_rating(gen): 10.359364237296582
+get_rating(gen): 10.359364237296582
+get_rating(new_gen): 10.359364237296582
+gen name: gen-2028
+     rating: 10.359364237296582
+Set parameter TokenServer to value "10.60.1.73"
+Set parameter OutputFlag to value 1
+Set parameter OutputFlag to value 1
+Warning for adding constraints: zero or small (< 1e-13) coefficients, ignored
+Warning: zero or small (< 1e-13) coefficients in quadratic constraints, ignored
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Red Hat Enterprise Linux 8.8 (Ootpa)")
+
+CPU model: Intel(R) Xeon(R) Platinum 8470Q, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 104 physical cores, 104 logical processors, using up to 32 threads
+
+Optimize a model with 8116 rows, 4939 columns and 726086 nonzeros (Min)
+Model fingerprint: 0x60e062c5
+Model has 4775 linear objective coefficients
+Model has 2 quadratic constraints
+Variable types: 4906 continuous, 33 integer (33 binary)
+Coefficient statistics:
+  Matrix range     [2e-12, 1e+02]
+  QMatrix range    [1e-13, 3e-03]
+  QLMatrix range   [4e-07, 1e+00]
+  Objective range  [3e-01, 1e+06]
+  Bounds range     [1e-03, 1e+01]
+  RHS range        [3e-04, 5e+02]
+  QRHS range       [3e+01, 3e+01]
+
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 19s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 20s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 26s
+User MIP start produced solution with objective 2.5627e+08 (27.64s)
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 30s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 36s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 41s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 46s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 50s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 55s
+User MIP start produced solution with objective 2.5579e+08 (56.45s)
+User MIP start produced solution with objective 2.5577e+08 (59.68s)
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 60s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 65s
+User MIP start produced solution with objective 2.5577e+08 (66.66s)
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 70s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 75s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 80s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 85s
+User MIP start produced solution with objective 2.55725e+08 (87.37s)
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 90s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 95s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 100s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 105s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 110s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 115s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 120s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 310s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 388s
+Processing user MIP start: 0 nodes explored in subMIP, total elapsed time 390s
+Processing user MIP start: 2 nodes explored in subMIP, total elapsed time 395s
+Processing user MIP start: 2 nodes explored in subMIP, total elapsed time 400s
+Processing user MIP start: 5 nodes explored in subMIP, total elapsed time 405s
+Processing user MIP start: 11 nodes explored in subMIP, total elapsed time 414s
+Processing user MIP start: 11 nodes explored in subMIP, total elapsed time 415s
+Processing user MIP start: 24 nodes explored in subMIP, total elapsed time 420s
+Processing user MIP start: 24 nodes explored in subMIP, total elapsed time 425s
+Processing user MIP start: 24 nodes explored in subMIP, total elapsed time 430s
+Processing user MIP start: 48 nodes explored in subMIP, total elapsed time 435s
+Processing user MIP start: 48 nodes explored in subMIP, total elapsed time 449s
+Processing user MIP start: 48 nodes explored in subMIP, total elapsed time 450s
+Processing user MIP start: 48 nodes explored in subMIP, total elapsed time 455s
+Processing user MIP start: 75 nodes explored in subMIP, total elapsed time 471s
+Processing user MIP start: 76 nodes explored in subMIP, total elapsed time 478s
+Processing user MIP start: 132 nodes explored in subMIP, total elapsed time 480s
+Processing user MIP start: 132 nodes explored in subMIP, total elapsed time 486s
+Processing user MIP start: 132 nodes explored in subMIP, total elapsed time 490s
+Processing user MIP start: 132 nodes explored in subMIP, total elapsed time 496s
+Processing user MIP start: 215 nodes explored in subMIP, total elapsed time 502s
+Processing user MIP start: 215 nodes explored in subMIP, total elapsed time 506s
+Processing user MIP start: 215 nodes explored in subMIP, total elapsed time 511s
+Processing user MIP start: 215 nodes explored in subMIP, total elapsed time 515s
+Processing user MIP start: 280 nodes explored in subMIP, total elapsed time 521s
+Processing user MIP start: 280 nodes explored in subMIP, total elapsed time 526s
+Processing user MIP start: 280 nodes explored in subMIP, total elapsed time 530s
+Processing user MIP start: 353 nodes explored in subMIP, total elapsed time 536s
+Processing user MIP start: 353 nodes explored in subMIP, total elapsed time 541s
+Processing user MIP start: 353 nodes explored in subMIP, total elapsed time 545s
+User MIP start produced solution with objective 2.55638e+08 (549.78s)
+Processing user MIP start: 420 nodes explored in subMIP, total elapsed time 551s
+Processing user MIP start: 420 nodes explored in subMIP, total elapsed time 556s
+Processing user MIP start: 420 nodes explored in subMIP, total elapsed time 561s
+Processing user MIP start: 420 nodes explored in subMIP, total elapsed time 566s
+Processing user MIP start: 486 nodes explored in subMIP, total elapsed time 572s
+Processing user MIP start: 486 nodes explored in subMIP, total elapsed time 577s
+Processing user MIP start: 486 nodes explored in subMIP, total elapsed time 581s
+Processing user MIP start: 491 nodes explored in subMIP, total elapsed time 585s
+Loaded user MIP start with objective 2.55638e+08
+Processed MIP start in 588.31 seconds (898.48 work units)
+
+Presolve removed 8045 rows and 1798 columns (presolve time = 49s)...
+Presolve removed 8179 rows and 1932 columns (presolve time = 52s)...
+Presolve removed 7769 rows and 1522 columns
+Presolve time: 51.80s
+Presolved: 9390543 rows, 2351732 columns, 21399523 nonzeros
+Presolved model has 2348314 bilinear constraint(s)
+
+Solving non-convex QCP to global optimality
+
+Variable types: 2351732 continuous, 0 integer (0 binary)
+Found heuristic solution: objective 8921297.8940
+
+Deterministic concurrent LP optimizer: primal simplex, dual simplex, and barrier
+Showing barrier log only...
+
+Root barrier log...
+
+Ordering time: 0.40s
+
+Barrier statistics:
+ Dense cols : 2
+ Free vars  : 224
+ AA' NZ     : 3.803e+06
+ Factor NZ  : 4.843e+06 (roughly 2.0 GB of memory)
+ Factor Ops : 8.994e+08 (less than 1 second per iteration)
+ Threads    : 30
+
+                  Objective                Residual
+Iter       Primal          Dual         Primal    Dual     Compl     Time
+   0  -2.91352056e+13  9.29106142e+07  3.78e+06 2.63e+02  1.23e+09   737s
+   1  -1.36083971e+13  1.05212572e+09  1.37e+06 9.86e+02  1.19e+09   738s
+   2  -4.17330523e+12  2.69223495e+08  1.09e+04 1.38e+02  1.75e+08   739s
+   3  -2.12260408e+12  1.19548397e+08  1.44e+02 9.46e+00  1.25e+07   740s
+   4  -1.34875051e+12  1.08697405e+08  5.76e+01 4.88e+00  6.34e+06   740s
+   5  -1.22063338e+12  1.07297976e+08  4.93e+01 4.72e+00  6.09e+06   741s
+   6  -1.14814172e+12  9.81834506e+07  4.48e+01 3.79e+00  5.10e+06   742s
+   7  -9.39270253e+11  9.71295161e+07  3.38e+01 3.11e+00  4.07e+06   742s
+   8  -7.25688900e+11  9.52545964e+07  2.33e+01 1.43e+00  1.94e+06   743s
+   9  -2.55806572e+11  7.64215958e+07  4.25e+00 8.56e-01  1.15e+06   744s
+  10  -9.21383813e+10  3.79035271e+07  2.52e-01 2.95e-01  1.70e+05   745s
+  11  -2.38823270e+10  2.75479003e+07  1.40e-02 1.39e-01  2.03e+04   745s
+  12  -9.03138783e+09  2.01415321e+07  2.60e-03 2.11e-02  4.03e+03   746s
+  13  -3.96270956e+09  1.93509501e+07  9.38e-04 3.46e-03  1.16e+03   747s
+  14  -1.21409890e+09  1.92111013e+07  2.52e-04 2.99e-03  3.06e+02   747s
+  15  -4.12187793e+08  1.91848600e+07  7.96e-05 3.28e-03  9.85e+01   748s
+  16  -1.14244063e+08  1.91787095e+07  2.29e-05 6.86e-04  2.95e+01   748s
+  17  -4.00816748e+07  1.91747608e+07  9.88e-06 7.82e-05  1.29e+01   749s
+  18  -3.77829154e+07  1.54747218e+07  9.39e-06 9.51e-06  1.15e+01   750s
+  19  -7.77075560e+06  1.02717851e+07  2.55e-06 9.36e-06  3.91e+00   751s
+  20  -4.10508198e+06  1.20824996e+07  1.90e-06 9.18e-06  3.51e+00   753s
+  21   1.14613574e+06  1.02945469e+07  1.16e-06 1.94e-06  1.98e+00   754s
+  22   6.01487383e+06  9.46809829e+06  3.67e-07 1.02e-06  7.48e-01   754s
+  23   7.09627156e+06  9.34643629e+06  2.19e-07 9.08e-07  4.88e-01   756s
+  24   7.11605850e+06  9.27885241e+06  2.16e-07 8.45e-07  4.69e-01   757s
+  25   7.22969891e+06  9.00838600e+06  1.97e-07 6.48e-07  3.86e-01   758s
+  26   7.48513534e+06  8.89818210e+06  1.58e-07 5.96e-07  3.06e-01   760s
+  27   7.65732175e+06  8.69202679e+06  1.32e-07 3.54e-07  2.24e-01   762s
+  28   8.26915382e+06  8.55410977e+06  2.81e-08 5.46e-07  6.18e-02   764s
+  29   8.37156095e+06  8.50147237e+06  1.35e-08 3.17e-07  2.82e-02   767s
+  30   8.40354980e+06  8.49417633e+06  8.67e-09 4.19e-07  1.96e-02   770s
+  31   8.40639273e+06  8.49121561e+06  8.23e-09 3.92e-07  1.84e-02   773s
+  32   8.40978279e+06  8.49012674e+06  7.65e-09 3.83e-07  1.74e-02   775s
+  33   8.41230426e+06  8.48944393e+06  7.19e-09 3.77e-07  1.67e-02   776s
+  34   8.41588452e+06  8.48831395e+06  6.50e-09 3.67e-07  1.57e-02   779s
+  35   8.41595467e+06  8.48739406e+06  6.49e-09 3.57e-07  1.55e-02   781s
+  36   8.41664704e+06  8.48628356e+06  6.36e-09 3.46e-07  1.51e-02   786s
+  37   8.41743443e+06  8.48491324e+06  6.22e-09 3.70e-07  1.46e-02   790s
+  38   8.41801173e+06  8.48424756e+06  6.11e-09 3.63e-07  1.44e-02   792s
+  39   8.41873974e+06  8.48261500e+06  5.95e-09 4.99e-07  1.38e-02   796s
+  40   8.42245551e+06  8.48079874e+06  5.20e-09 9.18e-07  1.26e-02   800s
+  41   8.42888818e+06  8.47685948e+06  4.01e-09 9.35e-07  1.04e-02   803s
+  42   8.43056749e+06  8.47549570e+06  3.69e-09 1.03e-06  9.74e-03   807s
+  43   8.43136280e+06  8.47490529e+06  3.52e-09 1.16e-06  9.44e-03   811s
+  44   8.43194503e+06  8.47109787e+06  3.58e-09 1.61e-06  8.49e-03   815s
+  45   8.43305833e+06  8.47050832e+06  3.19e-09 1.57e-06  8.12e-03   818s
+  46   8.43429435e+06  8.46868467e+06  2.95e-09 1.86e-06  7.46e-03   821s
+  47   8.43600661e+06  8.46557681e+06  2.68e-09 1.84e-06  6.41e-03   825s
+  48   8.43888407e+06  8.46469968e+06  1.95e-09 1.76e-06  5.60e-03   827s
+  49   8.43889766e+06  8.46438667e+06  2.17e-09 1.72e-06  5.53e-03   829s
+  50   8.43912691e+06  8.46258695e+06  2.20e-09 1.53e-06  5.09e-03   832s
+  51   8.43965795e+06  8.46086445e+06  2.03e-09 1.85e-06  4.60e-03   835s
+  52   8.43997334e+06  8.46082057e+06  1.87e-09 1.85e-06  4.52e-03   839s
+  53   8.44044321e+06  8.45794642e+06  1.71e-09 1.74e-06  3.80e-03   843s
+  54   8.44185222e+06  8.45737317e+06  1.76e-09 1.67e-06  3.37e-03   846s
+  55   8.44190483e+06  8.45506398e+06  2.81e-09 1.43e-06  2.85e-03   849s
+  56   8.44328661e+06  8.45407438e+06  1.95e-09 1.44e-06  2.34e-03   853s
+  57   8.44399605e+06  8.45325211e+06  2.58e-09 1.57e-06  2.01e-03   856s
+  58   8.44413946e+06  8.45247398e+06  1.30e-09 1.50e-06  1.81e-03   860s
+  59   8.44419742e+06  8.45216392e+06  2.42e-09 1.56e-06  1.73e-03   864s
+  60   8.44421747e+06  8.45140504e+06  1.67e-09 1.50e-06  1.56e-03   867s
+  61   8.44434851e+06  8.44898724e+06  2.25e-09 1.02e-06  1.01e-03   869s
+  62   8.44464572e+06  8.44738010e+06  2.63e-08 6.48e-07  5.94e-04   871s
+  63   8.44484272e+06  8.44695009e+06  7.46e-09 5.56e-07  4.58e-04   873s
+  64   8.44484929e+06  8.44669180e+06  7.06e-09 5.58e-07  4.01e-04   877s
+  65   8.44487059e+06  8.44660320e+06  6.12e-09 5.64e-07  3.77e-04   879s
+  66   8.44487634e+06  8.44653199e+06  5.97e-09 5.51e-07  3.60e-04   881s
+  67   8.44488298e+06  8.44647035e+06  5.84e-09 5.38e-07  3.45e-04   883s
+  68   8.44488733e+06  8.44643248e+06  5.77e-09 5.29e-07  3.36e-04   885s
+  69   8.44490166e+06  8.44640336e+06  5.55e-09 5.22e-07  3.26e-04   886s
+  70   8.44491473e+06  8.44633220e+06  5.38e-09 5.03e-07  3.08e-04   888s
+  71   8.44496361e+06  8.44629603e+06  4.78e-09 4.93e-07  2.90e-04   890s
+  72   8.44503166e+06  8.44606175e+06  3.64e-09 3.85e-07  2.24e-04   891s
+  73   8.44503980e+06  8.44597754e+06  3.48e-09 3.52e-07  2.04e-04   893s
+  74   8.44505818e+06  8.44593028e+06  3.13e-09 3.46e-07  1.90e-04   894s
+  75   8.44509169e+06  8.44587937e+06  1.98e-09 3.41e-07  1.72e-04   896s
+  76   8.44509407e+06  8.44562249e+06  1.49e-09 2.52e-07  1.15e-04   897s
+  77   8.44510058e+06  8.44551233e+06  2.07e-09 2.02e-07  8.98e-05   899s
+  78   8.44510910e+06  8.44540782e+06  2.12e-09 1.51e-07  6.52e-05   900s
+  79   8.44511315e+06  8.44530126e+06  2.08e-09 9.54e-08  4.11e-05   901s
+  80   8.44511469e+06  8.44528091e+06  1.67e-09 9.07e-08  3.63e-05   902s
+  81   8.44511625e+06  8.44520483e+06  2.73e-09 4.96e-08  1.94e-05   903s
+  82   8.44511691e+06  8.44516530e+06  1.73e-09 2.73e-08  1.06e-05   904s
+  83   8.44511730e+06  8.44515155e+06  1.49e-09 1.98e-08  7.51e-06   905s
+  84   8.44511738e+06  8.44514763e+06  1.68e-09 1.77e-08  6.64e-06   906s
+  85   8.44511745e+06  8.44513064e+06  1.50e-09 8.34e-09  2.91e-06   907s
+  86   8.44511744e+06  8.44512031e+06  2.38e-09 2.00e-09  6.40e-07   908s
+  87   8.44511756e+06  8.44511828e+06  2.46e-09 5.30e-10  1.63e-07   909s
+  88   8.44511755e+06  8.44511757e+06  2.09e-09 6.73e-10  4.81e-09   910s
+  89   8.44511756e+06  8.44511756e+06  1.89e-09 1.09e-11  1.22e-12   911s
+
+Barrier solved model in 89 iterations and 910.98 seconds (1111.26 work units)
+Optimal objective 8.44511756e+06
+
+
+Root crossover log...
+
+  459470 DPushes remaining with DInf 0.0000000e+00               912s
+       0 DPushes remaining with DInf 0.0000000e+00               916s
+Warning: Markowitz tolerance tightened to 0.25
+
+ 2599717 PPushes remaining with PInf 4.5487007e-02               916s
+ 2484710 PPushes remaining with PInf 0.0000000e+00               932s
+ 2120807 PPushes remaining with PInf 0.0000000e+00               935s
+ 1705355 PPushes remaining with PInf 0.0000000e+00               940s
+ 1534013 PPushes remaining with PInf 0.0000000e+00               945s
+ 1369779 PPushes remaining with PInf 0.0000000e+00               950s
+ 1236139 PPushes remaining with PInf 0.0000000e+00               955s
+ 1114951 PPushes remaining with PInf 0.0000000e+00               960s
+  979290 PPushes remaining with PInf 0.0000000e+00               965s
+  891735 PPushes remaining with PInf 0.0000000e+00               970s
+  826802 PPushes remaining with PInf 0.0000000e+00               975s
+  803087 PPushes remaining with PInf 0.0000000e+00               980s
+  773822 PPushes remaining with PInf 0.0000000e+00               985s
+  744262 PPushes remaining with PInf 0.0000000e+00               990s
+  719691 PPushes remaining with PInf 0.0000000e+00               995s
+  695206 PPushes remaining with PInf 0.0000000e+00              1000s
+  668566 PPushes remaining with PInf 0.0000000e+00              1005s
+  641412 PPushes remaining with PInf 0.0000000e+00              1010s
+  616420 PPushes remaining with PInf 0.0000000e+00              1015s
+  592734 PPushes remaining with PInf 0.0000000e+00              1020s
+  570719 PPushes remaining with PInf 0.0000000e+00              1025s
+  546435 PPushes remaining with PInf 0.0000000e+00              1030s
+  523926 PPushes remaining with PInf 0.0000000e+00              1035s
+  502627 PPushes remaining with PInf 0.0000000e+00              1040s
+  479967 PPushes remaining with PInf 0.0000000e+00              1045s
+  458706 PPushes remaining with PInf 0.0000000e+00              1050s
+  438185 PPushes remaining with PInf 0.0000000e+00              1055s
+  417882 PPushes remaining with PInf 0.0000000e+00              1060s
+  398037 PPushes remaining with PInf 0.0000000e+00              1065s
+  381931 PPushes remaining with PInf 0.0000000e+00              1070s
+  363297 PPushes remaining with PInf 0.0000000e+00              1075s
+  340934 PPushes remaining with PInf 0.0000000e+00              1080s
+  319856 PPushes remaining with PInf 0.0000000e+00              1085s
+  299113 PPushes remaining with PInf 0.0000000e+00              1090s
+  278735 PPushes remaining with PInf 0.0000000e+00              1095s
+  258155 PPushes remaining with PInf 0.0000000e+00              1100s
+  237532 PPushes remaining with PInf 0.0000000e+00              1105s
+  218681 PPushes remaining with PInf 0.0000000e+00              1110s
+  197784 PPushes remaining with PInf 0.0000000e+00              1115s
+  177157 PPushes remaining with PInf 0.0000000e+00              1120s
+  157474 PPushes remaining with PInf 0.0000000e+00              1125s
+  137014 PPushes remaining with PInf 0.0000000e+00              1130s
+  116849 PPushes remaining with PInf 0.0000000e+00              1135s
+   96834 PPushes remaining with PInf 0.0000000e+00              1140s
+   76193 PPushes remaining with PInf 0.0000000e+00              1145s
+   57122 PPushes remaining with PInf 0.0000000e+00              1150s
+   36913 PPushes remaining with PInf 0.0000000e+00              1155s
+   16686 PPushes remaining with PInf 0.0000000e+00              1160s
+       0 PPushes remaining with PInf 0.0000000e+00              1165s
+
+  Push phase complete: Pinf 0.0000000e+00, Dinf 4.2314519e-11   1165s
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+ 3059073    8.4451176e+06   0.000000e+00   0.000000e+00   1165s
+Crossover time: 254.33 seconds (828.31 work units)
+ 3059073    8.4451176e+06   0.000000e+00   0.000000e+00   1166s
+ 3059137    8.4451176e+06   0.000000e+00   0.000000e+00   1169s
+
+Extra simplex iterations from dual to original model: 64
+
+Use crossover to convert LP symmetric solution to basic solution...
+
+Root crossover log...
+
+    1604 DPushes remaining with DInf 1.8797503e-06              1173s
+      58 DPushes remaining with DInf 0.0000000e+00              1176s
+
+     250 PPushes remaining with PInf 0.0000000e+00              1179s
+       0 PPushes remaining with PInf 0.0000000e+00              1182s
+
+  Push phase complete: Pinf 0.0000000e+00, Dinf 5.2856260e-08   1183s
+
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+ 3060465    8.4451176e+06   0.000000e+00   0.000000e+00   1186s
+Crossover time: 16.03 seconds (66.20 work units)
+ 3060465    8.4451176e+06   0.000000e+00   5.166965e+03   1191s
+ 3060571    8.4451176e+06   0.000000e+00   0.000000e+00   1194s
+
+Extra simplex iterations after uncrush: 106
+Concurrent spin time: 0.07s
+
+Solved with barrier
+
+Root relaxation: objective 8.445118e+06, 3060571 iterations, 485.03 seconds (1090.13 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0 8445117.56    0  534 8921297.89 8445117.56  5.34%     - 1194s
+     0     0 8445117.56    0  534 8921297.89 8445117.56  5.34%     - 1208s
+     0     0 8602383.89    0  569 8921297.89 8602383.89  3.57%     - 1257s
+     0     0 8602383.89    0  568 8921297.89 8602383.89  3.57%     - 1270s
+     0     0 8635391.76    0  492 8921297.89 8635391.76  3.20%     - 1364s
+     0     0 8635391.76    0  492 8921297.89 8635391.76  3.20%     - 1380s
+     0     0 8635896.67    0  489 8921297.89 8635896.67  3.20%     - 1408s
+     0     0 8679941.67    0  574 8921297.89 8679941.67  2.71%     - 1457s
+     0     0 8697585.28    0  576 8921297.89 8697585.28  2.51%     - 1499s
+     0     0 8710449.88    0  550 8921297.89 8710449.88  2.36%     - 1557s
+     0     0 8711926.36    0  550 8921297.89 8711926.36  2.35%     - 1601s
+     0     0 8716527.82    0  524 8921297.89 8716527.82  2.30%     - 1653s
+     0     0 8717923.72    0  566 8921297.89 8717923.72  2.28%     - 1692s
+     0     0 8720249.87    0  600 8921297.89 8720249.87  2.25%     - 1743s
+     0     0 8720410.74    0  687 8921297.89 8720410.74  2.25%     - 1782s
+     0     0 8724468.32    0  601 8921297.89 8724468.32  2.21%     - 1834s
+     0     0 8725277.14    0  625 8921297.89 8725277.14  2.20%     - 1877s
+     0     0 8730974.74    0  549 8921297.89 8730974.74  2.13%     - 1936s
+     0     0 8731532.28    0  575 8921297.89 8731532.28  2.13%     - 1991s
+     0     0 8740056.49    0  478 8921297.89 8740056.49  2.03%     - 2059s
+     0     0 8742425.36    0  550 8921297.89 8742425.36  2.01%     - 2115s
+     0     0 8744162.48    0  544 8921297.89 8744162.48  1.99%     - 2176s
+     0     0 8744162.48    0  544 8921297.89 8744162.48  1.99%     - 2204s
+     0     0 8744529.40    0  549 8921297.89 8744529.40  1.98%     - 2236s
+     0     0 8744529.40    0  549 8921297.89 8744529.40  1.98%     - 2264s
+     0     0 8755027.12    0  544 8921297.89 8755027.12  1.86%     - 2309s
+     0     0 8756404.24    0  549 8921297.89 8756404.24  1.85%     - 2363s
+     0     0 8761009.97    0  545 8921297.89 8761009.97  1.80%     - 2443s
+     0     0 8761635.30    0  612 8921297.89 8761635.30  1.79%     - 2509s
+     0     0 8764544.88    0  478 8921297.89 8764544.88  1.76%     - 2596s
+     0     0 8764780.94    0  546 8921297.89 8764780.94  1.75%     - 2665s
+     0     0 8766085.19    0  601 8921297.89 8766085.19  1.74%     - 2749s
+     0     0 8766176.79    0  576 8921297.89 8766176.79  1.74%     - 2822s
+     0     0 8766176.79    0  576 8921297.89 8766176.79  1.74%     - 2854s
+     0     0 8771712.36    0  550 8921297.89 8771712.36  1.68%     - 2913s
+     0     0 8773520.58    0  549 8921297.89 8773520.58  1.66%     - 2985s
+     0     0 8775670.50    0  546 8921297.89 8775670.50  1.63%     - 3076s
+     0     0 8775891.04    0  550 8921297.89 8775891.04  1.63%     - 3133s
+     0     0 8777260.70    0  478 8921297.89 8777260.70  1.61%     - 3246s
+     0     0 8777658.51    0  478 8921297.89 8777658.51  1.61%     - 3340s
+     0     0 8780481.16    0  478 8921297.89 8780481.16  1.58%     - 3454s
+     0     0 8780562.58    0  597 8921297.89 8780562.58  1.58%     - 3554s
+     0     0 8782119.61    0  571 8921297.89 8782119.61  1.56%     - 3729s
+     0     0 8782411.06    0  742 8921297.89 8782411.06  1.56%     - 3851s
+     0     0 8782980.76    0  478 8921297.89 8782980.76  1.55%     - 3961s
+     0     0 8783458.37    0  478 8921297.89 8783458.37  1.55%     - 4085s
+     0     0 8783804.63    0  477 8921297.89 8783804.63  1.54%     - 4289s
+     0     0 8783864.05    0  519 8921297.89 8783864.05  1.54%     - 4384s
+     0     0 8784449.80    0  478 8921297.89 8784449.80  1.53%     - 4659s
+     0     0 8784515.40    0  478 8921297.89 8784515.40  1.53%     - 4708s
+     0     0 8784877.09    0  478 8921297.89 8784877.09  1.53%     - 4771s
+     0     0 8785229.54    0  478 8921297.89 8785229.54  1.53%     - 4826s
+     0     0 8785526.59    0  478 8921297.89 8785526.59  1.52%     - 4891s
+     0     0 8785796.00    0  478 8921297.89 8785796.00  1.52%     - 4942s
+     0     0 8785796.00    0  478 8921297.89 8785796.00  1.52%     - 4972s
+     0     0 8786149.10    0  478 8921297.89 8786149.10  1.51%     - 5079s
+     0     0 8786377.14    0  478 8921297.89 8786377.14  1.51%     - 5133s
+     0     0 8787340.49    0  478 8921297.89 8787340.49  1.50%     - 5254s
+     0     0 8787543.95    0  478 8921297.89 8787543.95  1.50%     - 5333s
+     0     0 8788606.98    0  478 8921297.89 8788606.98  1.49%     - 5501s
+     0     0 8788792.70    0  478 8921297.89 8788792.70  1.49%     - 5618s
+     0     0 8788985.22    0  478 8921297.89 8788985.22  1.48%     - 5778s
+     0     0 8789159.85    0  478 8921297.89 8789159.85  1.48%     - 5909s
+     0     0 8789159.85    0  478 8921297.89 8789159.85  1.48%     - 5937s
+     0     0 8789680.53    0  478 8921297.89 8789680.53  1.48%     - 6123s
+     0     0 8789893.35    0  477 8921297.89 8789893.35  1.47%     - 6170s
+     0     0 8790079.18    0  478 8921297.89 8790079.18  1.47%     - 6260s
+     0     0 8790358.12    0  478 8921297.89 8790358.12  1.47%     - 6351s
+     0     0 8790499.48    0  478 8921297.89 8790499.48  1.47%     - 6503s
+     0     0 8790499.48    0  478 8921297.89 8790499.48  1.47%     - 6528s
+     0     2 8790499.48    0  478 8921297.89 8790499.48  1.47%     - 8235s
+     1     3 8790683.95    1  478 8921297.89 8790499.48  1.47%  30.0 8310s
+     2     4 8848137.82    1  478 8921297.89 8790683.95  1.46%  1156 8428s
+     3     6 8848961.79    2  477 8921297.89 8790683.95  1.46%   816 8538s
+     5     8 8816052.40    2  478 8921297.89 8792402.77  1.44%  1040 8840s
+     7    14 8816861.11    3  478 8921297.89 8792402.77  1.44%  5959 9652s
+    13    22 8862203.50    4  478 8921297.89 8792402.77  1.44%  5686 9889s
+    23    43 8812201.82    4  478 8921297.89 8802095.76  1.34%  4849 13042s
+/var/spool/slurmd/job17214479/slurm_script: line 16: 686505 Killed                  julia --project=. --threads=36 jz_test_flowcancelling_losses_cats_v2.jl
+[2026-08-31T22:37:10.052] error: Detected 1 oom_kill event in StepId=17214479.batch. Some of the step tasks have been OOM Killed.

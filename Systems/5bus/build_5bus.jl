@@ -115,7 +115,7 @@ function add_candidate_line_data!(sys)
             angle_limits = line1.angle_limits,
             ext = Dict(
                 "is_candidate" => true,
-                "project_cost" => 100000.0,
+                "project_cost" => 28.5,
             ),
         ),
         Line(
@@ -131,7 +131,7 @@ function add_candidate_line_data!(sys)
             angle_limits = line2.angle_limits,
             ext = Dict(
                 "is_candidate" => true,
-                "project_cost" => 30000.0,
+                "project_cost" => 8.6,
             ),
         ),
     ]

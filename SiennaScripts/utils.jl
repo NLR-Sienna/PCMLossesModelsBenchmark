@@ -1017,8 +1017,10 @@ remove_double_circuit_name("Transformer5")            # Returns: "Transformer5"
 ```
 """
 function remove_double_circuit_name(branch_name)
-    # Remove "-double_circuit" suffix if present
-    return replace(branch_name, "-double_circuit" => "")
+    # Remove "double_circuit" suffix if present, with or without a leading dash
+    # (reduced branch names use both "name-double_circuit" and "namedouble_circuit").
+    trimmed = replace(branch_name, "-double_circuit" => "")
+    return replace(trimmed, "double_circuit" => "")
 end
 
 """
@@ -1056,8 +1058,10 @@ function get_arc_axis_from_branch_name(sys, branch_name)
     trim_branch_name = remove_double_circuit_name(branch_name)
 
     # Find the branch component by partial name match
-    branch =
-        first(PSY.get_components(x -> contains(x.name, trim_branch_name), ACBranch, sys))
+    matching_branches = collect(PSY.get_components(x -> contains(x.name, trim_branch_name), ACBranch, sys))
+    isempty(matching_branches) &&
+        throw(ArgumentError("No ACBranch found matching trimmed name \"$trim_branch_name\" (from branch name \"$branch_name\")"))
+    branch = first(matching_branches)
 
     # Return the arc as (from_bus_number, to_bus_number)
     return (branch.arc.from.number, branch.arc.to.number)

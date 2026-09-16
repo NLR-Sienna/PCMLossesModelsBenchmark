@@ -441,7 +441,7 @@ function add_current_loss_constraint_approximation!(model, loss_factors, injecti
     )
 
     # Get current iteration's injection expression
-    injection = container.expressions[InfrastructureSystems.Optimization.ExpressionKey{
+    injection = container.expressions[PowerSystems.InfrastructureSystems.Optimization.ExpressionKey{
         ActivePowerBalance,
         ACBus,
     }(
@@ -524,7 +524,7 @@ function add_current_loss_constraint_quadratic_approximation!(model, sys, ptdf, 
     R, _ = get_RX_vector(sys, ptdf)
 
     # Get current iteration's injection expression (decision variables)
-    injection = container.expressions[InfrastructureSystems.Optimization.ExpressionKey{
+    injection = container.expressions[PowerSystems.InfrastructureSystems.Optimization.ExpressionKey{
         ActivePowerBalance,
         ACBus,
     }(
@@ -612,7 +612,7 @@ function add_current_loss_constraint_quadratic_approximation_no_voltage!(model, 
     R, _ = get_RX_vector(sys, ptdf)
 
     # Get current iteration's injection expression (decision variables)
-    injection = container.expressions[InfrastructureSystems.Optimization.ExpressionKey{
+    injection = container.expressions[PowerSystems.InfrastructureSystems.Optimization.ExpressionKey{
         ActivePowerBalance,
         ACBus,
     }(
@@ -807,7 +807,7 @@ function update_copperplate_quadratic_loss_approximation_no_voltage_untracked!(
 
     R, _ = get_RX_vector(sys, ptdf)
 
-    injection = container.expressions[InfrastructureSystems.Optimization.ExpressionKey{
+    injection = container.expressions[PowerSystems.InfrastructureSystems.Optimization.ExpressionKey{
         ActivePowerBalance, ACBus}("")]
     bus_ax    = axes(injection, 1)
     bus_length = length(bus_ax)

@@ -327,3 +327,122 @@ function add_candidate_line_data_without_parallel!(sys)
         add_new_line_without_parallel!(sys, existing_line, candidate_name; candidate_ext = candidate_ext)
     end
 end
+
+function add_datacenter_data!(sys)
+    bus = get_component(ACBus, sys, "bus-685")
+    load = get_component(PowerLoad, sys, "bus685")
+    ts_array = get_time_series_array(SingleTimeSeries, load, "max_active_power"; ignore_scaling_factors = true)
+    new_ts = SingleTimeSeries(; name = "max_active_power", data = ts_array, scaling_factor_multiplier=get_max_active_power)
+    datacenter_bus = ACBus(;
+        number = 10000,
+        name = "datacenter_bus",
+        available = true,
+        bustype = ACBusTypes.PQ,
+        angle = 0.0,
+        magnitude = 1.0,
+        voltage_limits = get_voltage_limits(bus),
+        base_voltage = 230.0,
+        area = get_area(bus),
+        load_zone = get_load_zone(bus),
+    )
+    datacenter_load = PowerLoad(;
+        name = "datacenter_load",
+        available = true,
+        bus = datacenter_bus,
+        active_power = get_active_power(load)*2,
+        reactive_power = get_reactive_power(load)*2,
+        base_power =get_base_power(load),
+        max_active_power = get_max_active_power(load)*2,
+        max_reactive_power = get_max_reactive_power(load)*2,
+        conformity = 1,
+    )
+    dummy_bus = ACBus(;
+        number = 9999,
+        name = "dummy_bus",
+        available = true,
+        bustype = ACBusTypes.PQ,
+        angle = 0.0,
+        magnitude = 1.0,
+        voltage_limits = get_voltage_limits(bus),
+        base_voltage = 230.0,
+        area = get_area(bus),
+        load_zone = get_load_zone(bus),
+    )
+    dummy_load = PowerLoad(;
+        name = "dummy_load",
+        available = true,
+        bus = dummy_bus,
+        active_power = get_active_power(load)*0.001,
+        reactive_power = get_reactive_power(load)*0.001,
+        base_power =get_base_power(load),
+        max_active_power = get_max_active_power(load)*0.001,
+        max_reactive_power = get_max_reactive_power(load)*0.001,
+        conformity = 1,
+    )
+    add_component!(sys, datacenter_bus)
+    add_component!(sys, datacenter_load)
+    add_time_series!(sys, datacenter_load, new_ts)
+    add_component!(sys, dummy_bus)
+    add_component!(sys, dummy_load)
+    add_time_series!(sys, dummy_load, new_ts)
+
+    arc_dummy = Arc(; from = get_component(ACBus, sys, "datacenter_bus"), to = get_component(ACBus, sys, "dummy_bus"))
+    dummy_line = Line(        
+        name = "dummy_line_zbr", available = true,
+        active_power_flow = 0.0,  reactive_power_flow = 0.0,
+        arc = arc_dummy, r = 0.0000001, x = 0.0000001,
+        b = (from = 0.0, to = 0.0),  rating = 15.0,
+        angle_limits = (min=-1.8, max=1.8),  g = (from = 0.0, to = 0.0), )
+    add_component!(sys, dummy_line)
+    return sys
+end
+
+
+function add_candidate_datacenter_line_data_kv!(sys, kv1, kv2)
+    arc1 = Arc(; from = get_component(ACBus, sys, "bus-3338"), to = get_component(ACBus, sys, "datacenter_bus"))
+    arc2 = Arc(; from = get_component(ACBus, sys, "bus-3338"), to = get_component(ACBus, sys, "dummy_bus"))
+    line_length = 100.0 # km
+    candidate_name_1 = "candidate_datacenter_line_1"
+    candidate_name_2 = "candidate_datacenter_line_2"
+    new_candidates_line = [
+        build_expansion_ac_line_model(sys, arc1, line_length, kv1, candidate_name_1),
+        build_expansion_ac_line_model(sys, arc2, line_length, kv2, candidate_name_2),
+    ]
+    for line in new_candidates_line
+        add_component!(sys, line)
+    end
+    return sys
+end
+
+function candidate_projects_data(sys)
+    #gen1 = get_component(Generator, sys, "gen-1")
+    gen4 = get_component(Generator, sys, "gen-1005")
+    #candidate1_willingness_to_pay = LinearCurve(100.0)
+    candidate2_willingness_to_pay = LinearCurve(300.0)
+    return [
+        ThermalStandard( 
+            name = "candidate_thermal_2",
+            available = gen4.available,
+            status = gen4.status,
+            bus = get_component(ACBus, sys, "bus-3338"),
+            active_power = gen4.active_power*5,
+            reactive_power = gen4.reactive_power*5,
+            rating = gen4.rating*5,
+            active_power_limits = (min = 0.0, max = gen4.active_power_limits.max*3),
+            reactive_power_limits = gen4.reactive_power_limits, 
+            ramp_limits = gen4.ramp_limits,
+            operation_cost = gen4.operation_cost,
+            base_power = gen4.base_power*5,
+            time_limits = gen4.time_limits,
+            must_run = gen4.must_run,
+            prime_mover_type = gen4.prime_mover_type,
+            fuel = gen4.fuel,
+            time_at_status = gen4.time_at_status,
+            ext = Dict(
+                "willingness_to_pay" => candidate2_willingness_to_pay,
+                "is_candidate" => true,
+                "project_cost" => 500#50000.0,
+            )
+        ),
+    ]
+end

@@ -325,8 +325,12 @@ function add_shift_terms_to_candidate_line_constraints!(
 )
     container  = decision_model.internal.container
     time_steps = PSI.get_time_steps(container)
-    ub_con = PSI.get_constraint(container, FlowRateConstraint(), T, "ub")
-    lb_con = PSI.get_constraint(container, FlowRateConstraint(), T, "lb")
+    ub_key = InfrastructureSystems.Optimization.ConstraintKey{FlowRateConstraint, T}("ub")
+    lb_key = InfrastructureSystems.Optimization.ConstraintKey{FlowRateConstraint, T}("lb")
+    (haskey(container.constraints, ub_key) && haskey(container.constraints, lb_key)) ||
+        return nothing
+    ub_con = container.constraints[ub_key]
+    lb_con = container.constraints[lb_key]
 
     for line in candidate_lines
         k_name   = get_name(line)

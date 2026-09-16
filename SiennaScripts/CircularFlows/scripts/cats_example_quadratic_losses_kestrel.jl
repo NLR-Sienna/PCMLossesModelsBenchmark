@@ -19,6 +19,7 @@ using Ipopt
 using Dates
 using DataFrames
 using Logging
+using Gurobi
 
 include(joinpath(kestrel_path, "mapped_indices.jl"))
 include(joinpath(kestrel_path, "circular_flows.jl"))
@@ -32,7 +33,8 @@ const PSI = PowerSimulations
 
 cats_json = joinpath(this_path, "Systems", "CATS", "CATS_saved_reduced_sys.json")
 
-highs_milp = PSI.optimizer_with_attributes(HiGHS.Optimizer, "mip_rel_gap" => 0.01)
+#highs_milp = PSI.optimizer_with_attributes(HiGHS.Optimizer, "mip_rel_gap" => 0.01)
+gurobi_milp = PSI.optimizer_with_attributes(Gurobi.Optimizer, "MIPGap" => 0.01)
 ipopt_nlp  = PSI.optimizer_with_attributes(Ipopt.Optimizer, "print_level" => 3)
 
 function get_ptdf_bus_injections(model)
@@ -52,7 +54,7 @@ function detect_cats_circular_flows_quad(sys; time_step::Int = 1)
     uc_model = make_ptdf_model_without_losses(
         sys;
         device_models = CATS_UC_MODELS,
-        optimizer     = highs_milp,
+        optimizer     = gurobi_milp,
         ptdf          = ptdf,
         name          = "UC",
         ignore_pf     = true,
@@ -70,9 +72,12 @@ function detect_cats_circular_flows_quad(sys; time_step::Int = 1)
     )
     PSI.build!(ed_model, output_dir = mktempdir())
 
+    uc_container = PSI.get_optimization_container(uc_model)
+    uc_jump = PSI.get_jump_model(uc_container)
+    optimize!(uc_jump)
     uc_sol = Dict(
         name(v) => value(v)
-        for v in all_variables(PSI.get_jump_model(PSI.get_optimization_container(uc_model)))
+        for v in all_variables(uc_jump)
     )
     for v in all_variables(PSI.get_jump_model(PSI.get_optimization_container(ed_model)))
         if is_binary(v)

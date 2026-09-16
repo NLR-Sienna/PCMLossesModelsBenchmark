@@ -22,9 +22,15 @@ using Gurobi
 import PowerSystems as PSY
 import PowerSimulations as PSI
 import PowerSystemCaseBuilder as PSB
+using DataFrames
+
 
 this_path = @__DIR__
 kestrel_path = joinpath(this_path, "SiennaScripts", "CircularFlows")
+WORKFLOW_DIR = "/projects/wetoowiroc/jzhang2/CATS-CaliforniaTestSystem/Sienna/ak_create_CATS_network_with_candidates"
+"/projects/wetoowiroc/jzhang2/CATS-CaliforniaTestSystem/Sienna/ak_create_CATS_network_with_candidates"
+SIENNA_DIR = dirname(WORKFLOW_DIR)
+
 const PNM = PowerNetworkMatrices
 
 include("SiennaScripts/CircularFlows/mapped_indices.jl")
@@ -35,22 +41,12 @@ include("SiennaScripts/build_models.jl")
 include("SiennaScripts/build_simulations.jl")
 include("SiennaScripts/utils.jl")
 include("Systems/5bus/ac_line_expansion_model_example.jl")
-include("SiennaScripts/FlowCancelling/build_models.jl")    # flow-cancelling builders
-
+include("SiennaScripts/FlowCancelling/build_models_CATS.jl")    # flow-cancelling builders
+include(joinpath(WORKFLOW_DIR, "utils.jl"))
+include("Systems/CATS/utils_CATS.jl")
+include("Systems/CATS/build_CATS.jl")
 const PSY = PowerSystems
 const PSI = PowerSimulations
-
-cats_json = joinpath(this_path, "Systems", "CATS", "CATS_saved_reduced_sys.json")
-
-sys = build_cats_system(cats_json)
-set_cats_renewable_costs!(sys, 1.0)
-scale_cats_loads!(sys, 1.3)
-transform_single_time_series!(sys, Hour(2), Hour(2))
-
-output_dir = "./CATS_PTDF"
-if !ispath(output_dir)
-    mkpath(output_dir)
-end
 
 function save_variables_to_csv(results, directory)
     mkpath(directory)
@@ -59,14 +55,135 @@ function save_variables_to_csv(results, directory)
     end
 end
 
+function save_powerload_time_series_to_csv(system, filepath)
+    loads = collect(get_components(PowerLoad, system))
+    loads_with_time_series = filter(
+        load -> has_time_series(load, SingleTimeSeries, "max_active_power"),
+        loads,
+    )
+    isempty(loads_with_time_series) && return
 
-add_datacenter_data!(sys)
-add_candidate_datacenter_line_data_kv!(sys, 230, 345)
-candidate_gens = candidate_projects_data(sys)
-for gen in candidate_gens
-    add_component!(sys, gen)
+    first_time_series = get_time_series_array(
+        SingleTimeSeries,
+        first(loads_with_time_series),
+        "max_active_power";
+        ignore_scaling_factors = false,
+    )
+    load_data = DataFrame(timestamp = timestamp(first_time_series))
+    for load in loads_with_time_series
+        time_series = get_time_series_array(
+            SingleTimeSeries,
+            load,
+            "max_active_power";
+            ignore_scaling_factors = false,
+        )
+        load_data[!, Symbol(get_name(load))] = values(time_series)
+    end
+    CSV.write(filepath, load_data)
 end
-### Flow Canceling Lossless Model ###
+
+cats_json = joinpath(this_path, "Systems", "CATS", "CATS_saved_reduced_sys.json")
+
+sys = build_cats_system(cats_json)
+set_cats_renewable_costs!(sys, 1.0)
+#scale_cats_loads!(sys, 2.1)
+set_units_base_system!(sys, "NATURAL_UNITS")
+transform_single_time_series!(sys, Hour(2), Hour(2))
+
+cost_data = CSV.read(joinpath(WORKFLOW_DIR, "CATS_data", "CATS_line_costs_and_lengths.csv"), DataFrame);
+
+output_dir = "./CATS_PTDF"
+if !ispath(output_dir)
+    mkpath(output_dir)
+end
+
+save_powerload_time_series_to_csv(
+    sys,
+    joinpath(output_dir, "powerload_time_series.csv"),
+)
+
+
+ptdf = PTDF(sys)
+template = ProblemTemplate(NetworkModel(PTDFPowerModel; PTDF_matrix = ptdf, use_slacks = true))
+device_models = CAT_FC_MODELS
+for (device_type, formulation) in device_models
+    set_device_model!(template, device_type, formulation)
+end
+set_device_model!(template, DeviceModel(Line, StaticBranch, use_slacks = true))
+
+voltage_limit = 115
+if voltage_limit != 0
+    arcs_voltage_limit = get_components(x -> get_base_voltage(get_to(x))>= voltage_limit || get_base_voltage(get_from(x))>= voltage_limit, Arc, sys)
+    branch_names_voltage_limit = get_name.(get_components(x -> get_arc(x) in arcs_voltage_limit, Branch, sys))
+    set_device_model!(template, DeviceModel(Line, StaticBranch, use_slacks = true, attributes=Dict("filter_function" => x -> get_name(x) in branch_names_voltage_limit)))
+end
+
+optimizer =  optimizer_with_attributes(Gurobi.Optimizer)
+
+model = DecisionModel(
+           template,
+           sys;
+           optimizer = optimizer,
+           name = "ED",
+           store_variable_names = true,
+           calculate_conflict = true,
+           optimizer_solve_log_print = true,
+       )
+
+build!(model; output_dir = output_dir)
+solve!(model)
+results = OptimizationProblemResults(model)
+save_variables_to_csv(results, output_dir)
+
+
+
+affected_lines = find_nonzero_line_slacks(
+    "/projects/wetoowiroc/jzhang2/PCMLossesModelsBenchmark/CATS_PTDF/FlowActivePowerSlackLowerBound__Line.csv",
+    "/projects/wetoowiroc/jzhang2/PCMLossesModelsBenchmark/CATS_PTDF/FlowActivePowerSlackUpperBound__Line.csv",
+)
+println.(affected_lines.name)
+
+function get_slack_line_arc(sys, line_name::AbstractString)
+    lines = collect(get_components(Line, sys))
+    lines_by_name = Dict(get_name(line) => line for line in lines)
+    if haskey(lines_by_name, line_name)
+        return get_arc(lines_by_name[line_name])
+    end
+
+    endpoints = match(r"bus-(\d+)-bus-(\d+)", line_name)
+    endpoints === nothing &&
+        throw(ArgumentError("Cannot determine endpoints for slack line $line_name"))
+    endpoint_numbers = Set(parse.(Int, endpoints.captures))
+    matching_lines = filter(lines) do line
+        arc = get_arc(line)
+        Set((get_number(get_from(arc)), get_number(get_to(arc)))) == endpoint_numbers
+    end
+    isempty(matching_lines) &&
+        throw(ArgumentError("No system Line matches slack line $line_name"))
+    return get_arc(first(matching_lines))
+end
+
+
+affected_arcs = [
+    get_slack_line_arc(sys, line_name)
+    for line_name in affected_lines.name
+]
+
+affected_arcs_buses = [
+    (get_number(get_from(arc)), get_number(get_to(arc)))
+    for arc in affected_arcs
+]
+
+num_buses_to_extract = parse(Int, get(ENV, "CATS_NUM_CANDIDATE_GENS", "130"))
+gens_to_duplicate =  find_candidate_generators(sys, affected_arcs, affected_arcs_buses, num_buses_to_extract)
+
+add_candidate_lines_to_network!(sys, affected_arcs, cost_data, 1)
+add_candidate_generators_to_network!(sys, gens_to_duplicate)
+
+
+
+
+
 model_fc_lossless = build_model_with_flow_canceling_terms(
     sys;
     optimizer = optimizer_with_attributes(Gurobi.Optimizer),

@@ -39,8 +39,8 @@ transform_single_time_series!(sys, Hour(2), Hour(2))
 #set_available!(get_component(Line, sys, "AB-2"), false)
 #set_available!(get_component(Line, sys, "AB-3"), false)
 # set_rating!(get_component(Line, sys, "AB-2"), 1)
-# set_rating!(get_component(Line, sys, "CB-1"), 0.2)
-# set_rating!(get_component(Line, sys, "CA-1"), 0.2)
+# set_rating!(get_component(Line, sys, "CB-1"), 20.0)
+# set_rating!(get_component(Line, sys, "CA-1"), 20.0)
 output_dir = "./RTS_OSW_PTDF"
 if !ispath(output_dir)
     mkpath(output_dir)
@@ -48,12 +48,12 @@ end
 
 #add_candidate_line_data_without_parallel!(sys)
 add_datacenter_data!(sys)
-add_candidate_datacenter_line_data_kv!(sys, 345, 500)
+add_candidate_datacenter_line_data_kv!(sys, 230, 345)
 
-candidate_gens = candidate_projects_data(sys)
-for gen in candidate_gens
-    add_component!(sys, gen)
-end
+# candidate_gens = candidate_projects_data(sys)
+# for gen in candidate_gens
+#     add_component!(sys, gen)
+# end
 
 model_fc_quad = build_model_with_flow_canceling_and_quadratic_losses(
     sys;
@@ -145,152 +145,187 @@ value.(container_quad.variables[InfrastructureSystems.Optimization.VariableKey{L
 #Losses are negatve: Gen+Loss=Load
 #
 #Calculate losses using r*I^2
-fc_line = PSI.get_expression(container_quad, PTDFBranchFlowWithFC(), PSY.Line)
-line_names = axes(fc_line, 1)
-R_line = Dict(get_name(l) => get_r(l) for l in get_components(get_available, PSY.Line, sys))
+# fc_line = PSI.get_expression(container_quad, PTDFBranchFlowWithFC(), PSY.Line)
+# line_names = axes(fc_line, 1)
+# R_line = Dict(get_name(l) => get_r(l) for l in get_components(get_available, PSY.Line, sys))
 
-other_branch_type_data = []
-for T in (PSY.PhaseShiftingTransformer, PSY.TapTransformer, PSY.Transformer2W)
-    key = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlowWithFC, T}("")
-    if !haskey(container_quad.expressions, key)
-        continue
-    end
-    fc = container_quad.expressions[key]
-    R_dict = Dict(get_name(b) => get_r(b) for b in get_components(get_available, T, sys))
-    push!(other_branch_type_data, (fc, R_dict))
-end
-
-cal_loss=Dict()
-for t in axes(fc_line, 2)
-    cal_loss[t] = 
-        -sum(R_line[name] * value(fc_line[name, t])^2 for name in line_names) -
-        sum(
-            R_dict[name] * value(fc[name, t])^2
-            for (fc, R_dict) in other_branch_type_data
-            for name in axes(fc, 1);
-            init = 0.0,
-        )
-end        
-#julia> cal_loss 
-#Dict{Any, Any} with 2 entries:
-#  2 => -0.0585694
-#  1 => -0.0494142
-
-#=
-uc1=model_fc_quad.internal.container
-open("model_fc_quad.txt","w") do io
-    redirect_stdout(io) do
-        println(objective_function(uc1.JuMPmodel))
-        for k in all_constraints(uc1.JuMPmodel,; include_variable_in_set_constraints = true)           
-            println(name(k),",",k) 
-        end    
-    end
-end
-=#
-#set candidate_line_2 investment to 1 and candidate_line_1 to 0 base on the relaxed solution
-#value.(container_quad.variables[PSI.VariableKey{BranchInvestmentVariable, Line}("")])
-#1-dimensional DenseAxisArray{Float64,1,...} with index sets:
-#    Dimension 1, ["candidate_line_2", "candidate_line_1"]
-#And data, a 2-element Vector{Float64}:
-# 0.9872490778825471
-# 1.9270021486612987e-8
-#julia> value.(container_quad.variables[PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}("")])
-#1-dimensional DenseAxisArray{Float64,1,...} with index sets:
-#    Dimension 1, ["candidate_thermal_1", "candidate_thermal_2"]
-#And data, a 2-element Vector{Float64}:
-#  0.9999995441878543
-# -6.641140368302735e-9
-fix(container_quad.variables[PSI.VariableKey{BranchInvestmentVariable, Line}("")]["candidate_line_1"],0,force=true)
-fix(container_quad.variables[PSI.VariableKey{BranchInvestmentVariable, Line}("")]["candidate_line_2"],1,force=true)
-fix(container_quad.variables[PSI.VariableKey{BranchInvestmentVariable, Line}("")]["candidate_line_3"],0,force=true)
-#fix(container_quad.variables[PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}("")]["candidate_thermal_1"],1,force=true)
-#fix(container_quad.variables[PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}("")]["candidate_thermal_2"],1,force=true)
-
-solve!(model_fc_quad)
-value.(container_quad.variables[PSI.VariableKey{BranchInvestmentVariable, Line}("")])
-#value.(container_quad.variables[PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}("")])
-
-println("Solved Losses,",
-value.(container_quad.variables[InfrastructureSystems.Optimization.VariableKey{LineLossTotalApproximation, System}("")]))
-
-#julia> println("Solved Losses,",
-#       value.(container_quad.variables[InfrastructureSystems.Optimization.VariableKey{LineLossTotalApproximation, System}("")]))
-#Solved Losses,2-dimensional DenseAxisArray{Float64,2,...} with index sets:
-#    Dimension 1, [4]
-#    Dimension 2, 1:2
-#And data, a 1×2 Matrix{Float64}:
-# -0.047405713992274  -0.05802386784571255
-
-
-
-#####################################################################
-###Ychen validate through setting candidate_line_1 unavailable
-sys1 = System("modified_RTS_GMLC_DA_sys_noForecast.json")
-transform_single_time_series!(sys1, Hour(2), Hour(2))
-# Comment an additional phase shifting transformer to avoid an issue with different parallel types in PSI
-
-
-# Add candidate thermal generators (flagged with ext["is_candidate"] = true)
-# ──► candidate_projects_data  [Systems/5bus/build_5bus.jl:44-99]
-# candidate_gens = candidate_projects_data(sys1)
-# for gen in candidate_gens
-#     add_component!(sys1, gen)
+# other_branch_type_data = []
+# for T in (PSY.PhaseShiftingTransformer, PSY.TapTransformer, PSY.Transformer2W)
+#     key = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlowWithFC, T}("")
+#     if !haskey(container_quad.expressions, key)
+#         continue
+#     end
+#     fc = container_quad.expressions[key]
+#     R_dict = Dict(get_name(b) => get_r(b) for b in get_components(get_available, T, sys))
+#     push!(other_branch_type_data, (fc, R_dict))
 # end
 
-#add_candidate_line_data_without_parallel!(sys1)
-# add_datacenter_data!(sys1)
-# add_candidate_datacenter_line_data!(sys1)
-add_candidate_line_data_without_parallel!(sys1)
-unbuilt_line1=get_component(Line,sys1,"candidate_line_1")
-unbuilt_line2=get_component(Line,sys1,"candidate_line_3")
-#unbuilt_gen=get_component(Generator,sys1,"candidate_thermal_2")
+# cal_loss=Dict()
+# for t in axes(fc_line, 2)
+#     cal_loss[t] = 
+#         -sum(R_line[name] * value(fc_line[name, t])^2 for name in line_names) -
+#         sum(
+#             R_dict[name] * value(fc[name, t])^2
+#             for (fc, R_dict) in other_branch_type_data
+#             for name in axes(fc, 1);
+#             init = 0.0,
+#         )
+# end        
+# #julia> cal_loss 
+# #Dict{Any, Any} with 2 entries:
+# #  2 => -0.0585694
+# #  1 => -0.0494142
 
-set_available!(unbuilt_line1,false)
-set_available!(unbuilt_line2,false)
-#set_available!(unbuilt_gen,false)
+# #=
+# uc1=model_fc_quad.internal.container
+# open("model_fc_quad.txt","w") do io
+#     redirect_stdout(io) do
+#         println(objective_function(uc1.JuMPmodel))
+#         for k in all_constraints(uc1.JuMPmodel,; include_variable_in_set_constraints = true)           
+#             println(name(k),",",k) 
+#         end    
+#     end
+# end
+# =#
+# #set candidate_line_2 investment to 1 and candidate_line_1 to 0 base on the relaxed solution
+# #value.(container_quad.variables[PSI.VariableKey{BranchInvestmentVariable, Line}("")])
+# #1-dimensional DenseAxisArray{Float64,1,...} with index sets:
+# #    Dimension 1, ["candidate_line_2", "candidate_line_1"]
+# #And data, a 2-element Vector{Float64}:
+# # 0.9872490778825471
+# # 1.9270021486612987e-8
+# #julia> value.(container_quad.variables[PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}("")])
+# #1-dimensional DenseAxisArray{Float64,1,...} with index sets:
+# #    Dimension 1, ["candidate_thermal_1", "candidate_thermal_2"]
+# #And data, a 2-element Vector{Float64}:
+# #  0.9999995441878543
+# # -6.641140368302735e-9
+# fix(container_quad.variables[PSI.VariableKey{BranchInvestmentVariable, Line}("")]["candidate_line_1"],0,force=true)
+# fix(container_quad.variables[PSI.VariableKey{BranchInvestmentVariable, Line}("")]["candidate_line_2"],1,force=true)
+# fix(container_quad.variables[PSI.VariableKey{BranchInvestmentVariable, Line}("")]["candidate_line_3"],0,force=true)
+# #fix(container_quad.variables[PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}("")]["candidate_thermal_1"],1,force=true)
+# #fix(container_quad.variables[PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}("")]["candidate_thermal_2"],1,force=true)
 
-#transform_single_time_series!(sys1, Hour(2), Hour(2))
+# solve!(model_fc_quad)
+# value.(container_quad.variables[PSI.VariableKey{BranchInvestmentVariable, Line}("")])
+# #value.(container_quad.variables[PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}("")])
 
-ptdf = PTDF(sys1)
+# println("Solved Losses,",
+# value.(container_quad.variables[InfrastructureSystems.Optimization.VariableKey{LineLossTotalApproximation, System}("")]))
 
-network_model = NetworkModel(PTDFPowerModel; PTDF_matrix = ptdf, use_slacks = true)
+# #julia> println("Solved Losses,",
+# #       value.(container_quad.variables[InfrastructureSystems.Optimization.VariableKey{LineLossTotalApproximation, System}("")]))
+# #Solved Losses,2-dimensional DenseAxisArray{Float64,2,...} with index sets:
+# #    Dimension 1, [4]
+# #    Dimension 2, 1:2
+# #And data, a 1×2 Matrix{Float64}:
+# # -0.047405713992274  -0.05802386784571255
 
-template = ProblemTemplate(network_model)
-set_device_model!(template, ThermalStandard, ThermalDispatchNoMin)
-set_device_model!(template, Line, StaticBranch)
-set_device_model!(template, PhaseShiftingTransformer, StaticBranch)
-set_device_model!(template, PowerLoad, StaticPowerLoad)
 
-model_bench = DecisionModel(
-    template,
-    sys1;
-    optimizer = Gurobi.Optimizer,
-    name = "UC_QuadLoss",
-    store_variable_names = true,
+
+# #####################################################################
+# ###Ychen validate through setting candidate_line_1 unavailable
+# sys1 = System("modified_RTS_GMLC_DA_sys_noForecast.json")
+# transform_single_time_series!(sys1, Hour(2), Hour(2))
+# # Comment an additional phase shifting transformer to avoid an issue with different parallel types in PSI
+
+
+# # Add candidate thermal generators (flagged with ext["is_candidate"] = true)
+# # ──► candidate_projects_data  [Systems/5bus/build_5bus.jl:44-99]
+# # candidate_gens = candidate_projects_data(sys1)
+# # for gen in candidate_gens
+# #     add_component!(sys1, gen)
+# # end
+
+# #add_candidate_line_data_without_parallel!(sys1)
+# # add_datacenter_data!(sys1)
+# # add_candidate_datacenter_line_data!(sys1)
+# add_candidate_line_data_without_parallel!(sys1)
+# unbuilt_line1=get_component(Line,sys1,"candidate_line_1")
+# unbuilt_line2=get_component(Line,sys1,"candidate_line_3")
+# #unbuilt_gen=get_component(Generator,sys1,"candidate_thermal_2")
+
+# set_available!(unbuilt_line1,false)
+# set_available!(unbuilt_line2,false)
+# #set_available!(unbuilt_gen,false)
+
+# #transform_single_time_series!(sys1, Hour(2), Hour(2))
+
+# ptdf = PTDF(sys1)
+
+# network_model = NetworkModel(PTDFPowerModel; PTDF_matrix = ptdf, use_slacks = true)
+
+# template = ProblemTemplate(network_model)
+# set_device_model!(template, ThermalStandard, ThermalDispatchNoMin)
+# set_device_model!(template, Line, StaticBranch)
+# set_device_model!(template, PhaseShiftingTransformer, StaticBranch)
+# set_device_model!(template, PowerLoad, StaticPowerLoad)
+
+# model_bench = DecisionModel(
+#     template,
+#     sys1;
+#     optimizer = Gurobi.Optimizer,
+#     name = "UC_QuadLoss",
+#     store_variable_names = true,
+# )
+
+# build!(model_bench; output_dir = mktempdir())
+#     # --- Quadratic loss approximation ---
+# loss_var = add_current_loss_variables!(model_bench)
+
+#     # Step 2: Modify nodal balance to account for losses (without fixed RHS)
+# add_quadratic_current_loss_to_copperplate_balance!(model_bench, loss_var)
+
+#     # Step 3: Add quadratic loss approximation constraints (P = I²R formulation)
+# add_current_loss_constraint_quadratic_approximation_no_voltage!(model_bench, sys1, ptdf)
+# solve!(model_bench)
+
+# container_quad = model_bench.internal.container
+
+# println("Solved Losses,",
+# value.(container_quad.variables[InfrastructureSystems.Optimization.VariableKey{LineLossTotalApproximation, System}("")]))
+
+# #=
+# julia> println("Solved Losses,",                                                                                                
+#        value.(container_quad.variables[InfrastructureSystems.Optimization.VariableKey{LineLossTotalApproximation, System}("")]))
+# Solved Losses,2-dimensional DenseAxisArray{Float64,2,...} with index sets:
+#     Dimension 1, [4]
+#     Dimension 2, 1:2
+# And data, a 1×2 Matrix{Float64}:
+#  -0.04740571263845791  -0.05802386747719086
+# =#
+
+model_fc_lossless = build_model_with_flow_canceling_terms(
+    sys;
 )
 
-build!(model_bench; output_dir = mktempdir())
-    # --- Quadratic loss approximation ---
-loss_var = add_current_loss_variables!(model_bench)
+container_lossless = model_fc_lossless.internal.container
 
-    # Step 2: Modify nodal balance to account for losses (without fixed RHS)
-add_quadratic_current_loss_to_copperplate_balance!(model_bench, loss_var)
+ptdf_key_lossless = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlow,       Line}("")
+fc_key_lossless   = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlowWithFC, Line}("")
 
-    # Step 3: Add quadratic loss approximation constraints (P = I²R formulation)
-add_current_loss_constraint_quadratic_approximation_no_voltage!(model_bench, sys1, ptdf)
-solve!(model_bench)
+println("Expression keys registered in the container:")
+for k in keys(container_lossless.expressions); println("  ", k); end
 
-container_quad = model_bench.internal.container
+ptdf_exprs_lossless = container_lossless.expressions[ptdf_key_lossless]
+fc_exprs_lossless   = container_lossless.expressions[fc_key_lossless]
+first_line      = first(axes(fc_exprs_lossless, 1))
 
-println("Solved Losses,",
-value.(container_quad.variables[InfrastructureSystems.Optimization.VariableKey{LineLossTotalApproximation, System}("")]))
+println("PTDFBranchFlow[\"$first_line\", 1] (PTDF·injection, no FC correction):")
+println("  ", ptdf_exprs_lossless[first_line, 1])
+println("PTDFBranchFlowWithFC[\"$first_line\", 1] (adds BranchCancellingFlow correction terms):")
+println("  ", fc_exprs_lossless[first_line, 1])
 
-#=
-julia> println("Solved Losses,",                                                                                                
-       value.(container_quad.variables[InfrastructureSystems.Optimization.VariableKey{LineLossTotalApproximation, System}("")]))
-Solved Losses,2-dimensional DenseAxisArray{Float64,2,...} with index sets:
-    Dimension 1, [4]
-    Dimension 2, 1:2
-And data, a 1×2 Matrix{Float64}:
- -0.04740571263845791  -0.05802386747719086
-=#
+solve!(model_fc_lossless)
+
+# This will fail since we are using Ipopt that does not support binary variables.
+# However, Gurobi can be used to solve MINLP problems.
+
+res_fc_lossless = OptimizationProblemResults(model_fc_lossless)
+println("=== Flow-cancelling model solved ===")
+println("Objective: ", JuMP.objective_value(model_fc_lossless.internal.container.JuMPmodel))
+
+inv_lines_lossless = read_variable(res_fc_lossless, PSI.VariableKey{BranchInvestmentVariable, Line}(""))
+#inv_gens_lossless  = read_variable(res_fc_lossless, PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}(""))
+println("Line investment decisions (with losses):\n", inv_lines_lossless)
+#println("Generation investment decisions (with losses):\n", inv_gens_lossless)

@@ -1,0 +1,62 @@
+Set parameter TokenServer to value "10.60.1.73"
+Set parameter OutputFlag to value 1
+Set parameter OutputFlag to value 1
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Red Hat Enterprise Linux 8.8 (Ootpa)")
+
+CPU model: Intel(R) Xeon(R) Platinum 8470QL, instruction set [SSE2|AVX|AVX2|AVX512]
+Thread count: 104 physical cores, 104 logical processors, using up to 32 threads
+
+Optimize a model with 7708 rows, 4638 columns and 683328 nonzeros (Min)
+Model fingerprint: 0x11bde74d
+Model has 4546 linear objective coefficients
+Coefficient statistics:
+  Matrix range     [6e-09, 1e+00]
+  Objective range  [1e+00, 1e+06]
+  Bounds range     [1e-03, 1e+01]
+  RHS range        [3e-04, 5e+02]
+
+Presolve removed 7708 rows and 4638 columns
+Presolve time: 0.04s
+Presolve: All rows and columns removed
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+       0    6.4587824e+07   0.000000e+00   0.000000e+00      0s
+
+Solved in 0 iterations and 0.06 seconds (0.11 work units)
+Optimal objective  6.458782395e+07
+
+User-callback calls 28, time in user-callback 0.00 sec
+  Activating project at `/kfs2/projects/wetoowiroc/jzhang2/PCMLossesModelsBenchmark`
+[ Info: Loaded time series from storage file existing=/kfs2/projects/wetoowiroc/jzhang2/PCMLossesModelsBenchmark/Systems/CATS/CATS_saved_reduced_sys_time_series_storage.h5 new=/tmp/scratch/18228607/jl_O0Irx6 compression=CompressionSettings(false, CompressionTypes.DEFLATE = 1, 3, true)
+┌ Warning: The System was deserialized with checks disabled, and so was not validated.
+└ @ PowerSystems ~/.julia/packages/PowerSystems/vhoCS/src/base.jl:2554
+┌ Warning: Setting the system unit base from NATURAL_UNITS to SYSTEM_BASE for matrix construction
+└ @ PowerNetworkMatrices ~/.julia/packages/PowerNetworkMatrices/SUiXF/src/Ybus.jl:970
+[ Info: Unit System changed to UnitSystem.SYSTEM_BASE = 0
+[ Info: Finding subnetworks via iterative union find
+┌ Warning: Overwriting Line existing model
+└ @ PowerSimulations ~/.julia/packages/PowerSimulations/0hWKR/src/core/device_model.jl:154
+┌ Warning: Overwriting Line existing model
+└ @ PowerSimulations ~/.julia/packages/PowerSimulations/0hWKR/src/core/device_model.jl:154
+[ Info: Finding subnetworks via iterative union find
+ERROR: LoadError: BoundsError: attempt to access 0-element Vector{String} at index [1]
+Stacktrace:
+ [1] throw_boundserror(A::Vector{String}, I::Tuple{Int64})
+   @ Base ./essentials.jl:15
+ [2] getindex(A::Vector{String}, i::Int64)
+   @ Base ./essentials.jl:919
+ [3] find_candidate_lines_for_upgrade(system::System, results::OptimizationProblemResults, num_lines_to_extract::Int64; reduce_radial_branches::Bool)
+   @ Main /projects/wetoowiroc/jzhang2/CATS-CaliforniaTestSystem/Sienna/ak_create_CATS_network_with_candidates/utils.jl:510
+ [4] find_candidate_lines_for_upgrade
+   @ /projects/wetoowiroc/jzhang2/CATS-CaliforniaTestSystem/Sienna/ak_create_CATS_network_with_candidates/utils.jl:460 [inlined]
+ [5] find_candidate_lines_and_gens(system::System, num_lines_to_extract::Int64, num_buses_to_extract::Int64, voltage_limit::Float64, reduce_radial_branches::Bool)
+   @ Main /kfs2/projects/wetoowiroc/jzhang2/PCMLossesModelsBenchmark/Systems/CATS/build_cats.jl:477
+ [6] top-level scope
+   @ /kfs2/projects/wetoowiroc/jzhang2/PCMLossesModelsBenchmark/jz_test_flowcancelling_losses_cats_v2.jl:67
+ [7] include(mod::Module, _path::String)
+   @ Base ./Base.jl:306
+ [8] exec_options(opts::Base.JLOptions)
+   @ Base ./client.jl:317
+ [9] _start()
+   @ Base ./client.jl:550
+in expression starting at /kfs2/projects/wetoowiroc/jzhang2/PCMLossesModelsBenchmark/jz_test_flowcancelling_losses_cats_v2.jl:67
+i = 1
