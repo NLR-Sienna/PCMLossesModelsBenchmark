@@ -64,7 +64,7 @@ quadratic_losses_voltage_limit = 500.0
 max_b = 1 / minimum(get_x.(get_components(Line, system)))
 M = 2*pi*max_b
 
-upgraded_arcs, upgraded_arcs_buses, gens_to_duplicate = find_candidate_lines_and_gens(system, 10, 10, 500.0, reduce_radial_branches)
+upgraded_arcs, upgraded_arcs_buses, gens_to_duplicate = find_candidate_lines_and_gens(system, 10, 1, 230.0, reduce_radial_branches)
 
 add_candidate_lines_without_parallel!(system, upgraded_arcs,cost_data,1)
 add_candidate_generators_to_network!(
@@ -72,15 +72,41 @@ add_candidate_generators_to_network!(
            gens_to_duplicate
        )
 
+quadratic_loss_line_names = downfilter_quadratic_loss_lines(
+    system;
+    voltage_limit = quadratic_losses_voltage_limit,
+    optimizer = optimizer,
+    top_per_case = 30,
+    number_to_select = 5,
+)
 
-model = build_model_with_flow_canceling_and_quadratic_losses_CATS(system;
-    optimizer = optimizer_with_attributes(Gurobi.Optimizer),
+const GUROBI_ENV = Gurobi.Env()
+optimizer = JuMP.optimizer_with_attributes(() -> Gurobi.Optimizer(GUROBI_ENV),
+    "MIPGap" => 5e-3, "TimeLimit" => 25000, "Presolve" => 2, "Threads" => 50,
+    "MIPFocus" => 1,       # prioritize finding good feasible solutions over proving optimality
+    "Heuristics" => 0.3,   # spend more time in feasibility heuristics (default 0.05)
+    "Cuts" => 2,           # aggressive cut generation to tighten the relaxation
+    "NumericFocus" => 2,   # Big-M + tangent-cut coefficients can be numerically fragile
+    "ImproveStartTime" => 300,  # after 5 min, switch effort to improving the incumbent
+)   
+# optimizer = JuMP.optimizer_with_attributes(() -> Gurobi.Optimizer(GUROBI_ENV),
+#     "MIPGap" => 5e-3, "TimeLimit" => 25000, "Presolve" => 2, "Threads" => 50,
+#     "NonConvex" => 2,      # required: quadratic loss = -R*flow^2 is a nonconvex equality
+#     "MIPFocus" => 1,       # prioritize finding good feasible solutions over proving optimality
+#     "Heuristics" => 0.3,   # spend more time in feasibility heuristics (default 0.05)
+#     "Cuts" => 2,           # aggressive cut generation to tighten the relaxation
+#     "NumericFocus" => 2,   # Big-M + quadratic terms can be numerically fragile
+#     "ImproveStartTime" => 300,  # after 5 min, switch effort to improving the incumbent
+# )   
+model = build_model_with_flow_canceling_and_PWL_quadratic_losses_CATS(system;
+    optimizer = optimizer,
     device_models = CAT_FC_MODELS,
     voltage_limit,
     reduce_radial_branches,
     quadratic_losses_voltage_limit,
+#    quadratic_loss_line_names = quadratic_loss_line_names,
+    num_pwl_segments = 10,  # piecewise-linear tangent cuts per branch loss curve
 )
-
 solve!(model)
 
 res_fc_lossless = OptimizationProblemResults(model)
@@ -89,9 +115,23 @@ println("=== Flow-cancelling model solved ===")
 println("Objective: ", JuMP.objective_value(model.internal.container.JuMPmodel))
 
 inv_lines_fc = read_variable(res_fc_lossless, PSI.VariableKey{BranchInvestmentVariable, MonitoredLine}(""))
-inv_gens_fc  = read_variable(res_fc_lossless, PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}(""))
+#inv_gens_fc  = read_variable(res_fc_lossless, PSI.VariableKey{GenerationInvestmentVariable, ThermalStandard}(""))
 println("Line investment decisions (with losses):\n", inv_lines_fc)
 #println("Generation investment decisions (with losses):\n", inv_gens_fc)
 
 losses_fc = read_variable(res_fc_lossless, PSI.VariableKey{LineLossTotalApproximation, PSY.System}(""))
 println("Flow-cancelling losses:\n", losses_fc)
+
+# ptdf recomputed on the (candidate-converted) system, matching what the build function
+# constructed internally, so it can be used to reconstruct true quadratic losses.
+ybus_for_validation = reduce_radial_branches ?
+    PNM.Ybus(system; network_reductions = PNM.NetworkReduction[PNM.RadialReduction()]) :
+    PNM.Ybus(system)
+ptdf_for_validation = PTDF(ybus_for_validation)
+
+validation = validate_pwl_vs_quadratic_losses(
+    model,
+    system,
+    ptdf_for_validation;
+    candidate_line_names = get_name.(get_components(x -> occursin("candidate", get_name(x)), MonitoredLine, system)),
+)

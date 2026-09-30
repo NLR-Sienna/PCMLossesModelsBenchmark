@@ -893,7 +893,91 @@ Transformer2W) for which a PTDFBranchFlowWithFC expression exists in the contain
 Resistances are keyed by reduced axis name (parallel-aggregated where needed).
 No voltage scaling is applied — suitable when a flat voltage profile is assumed.
 """
-function _fc_add_quadratic_loss_constraints!(model::PSI.DecisionModel, sys::PSY.System, ptdf)
+function _fc_downfilter_quadratic_loss_lines(
+    sys::PSY.System;
+    voltage_limit::Real = 0.0,
+    optimizer,
+    top_per_case::Int = 30,
+    number_to_select::Int = 20,
+)
+    candidate_names = Set(
+        get_name.(get_components(x -> occursin("candidate", get_name(x)), PSY.Line, sys))
+    )
+    isempty(candidate_names) && return nothing
+
+    line_losses_by_case = Vector{Vector{Tuple{String, Float64}}}()
+    for candidate_name in sort!(collect(candidate_names))
+        case_sys = deepcopy(sys)
+        candidate = PSY.get_component(PSY.Line, case_sys, candidate_name)
+        candidate === nothing && continue
+        PSY.set_available!(candidate, false)
+
+        ed_ptdf = PTDF(case_sys)
+        template = ProblemTemplate(
+            NetworkModel(PTDFPowerModel; PTDF_matrix = ed_ptdf, use_slacks = true),
+        )
+        for (device_type, formulation) in CATS_ED_MODELS
+            device_type == PSY.Line && continue
+            set_device_model!(template, device_type, formulation)
+        end
+        branch_names = get_name.(get_components(
+            x -> get_base_voltage(get_to(get_arc(x))) >= voltage_limit ||
+                get_base_voltage(get_from(get_arc(x))) >= voltage_limit,
+            PSY.Branch,
+            case_sys,
+        ))
+        set_device_model!(
+            template,
+            DeviceModel(
+                PSY.Line,
+                StaticBranch,
+                use_slacks = true,
+                attributes = Dict("filter_function" => x ->
+                    get_name(x) in branch_names && !occursin("candidate", get_name(x))),
+            ),
+        )
+
+        ed_model = DecisionModel(
+            template,
+            case_sys;
+            optimizer = optimizer,
+            name = "ED_loss_filter_$(candidate_name)",
+            store_variable_names = true,
+            optimizer_solve_log_print = false,
+        )
+        build!(ed_model; output_dir = mktempdir())
+        solve!(ed_model)
+
+        container = ed_model.internal.container
+        flow = PSI.get_expression(container, PTDFBranchFlow(), PSY.Line)
+        resistance = _resistance_by_reduced_name(case_sys, PSY.Line, axes(flow, 1), ed_ptdf)
+        losses = Dict(name => 0.0 for name in axes(flow, 1))
+        for name in axes(flow, 1), time in PSI.get_time_steps(container)
+            losses[name] += resistance[name] * JuMP.value(flow[name, time])^2
+        end
+        ranked = sort!(collect(losses); by = pair -> pair[2], rev = true)
+        push!(line_losses_by_case, first(ranked, min(top_per_case, length(ranked))))
+    end
+
+    counts = Dict{String, Int}()
+    total_losses = Dict{String, Float64}()
+    for ranked in line_losses_by_case, (name, loss) in ranked
+        counts[name] = get(counts, name, 0) + 1
+        total_losses[name] = get(total_losses, name, 0.0) + loss
+    end
+    selected = sort!(collect(keys(counts)); by =
+        name -> (-counts[name], -total_losses[name], name))
+    selected = Set(first(selected, min(number_to_select, length(selected))))
+    println("Quadratic-loss downfilter selected $(length(selected)) lines")
+    return selected
+end
+
+function _fc_add_quadratic_loss_constraints!(
+    model::PSI.DecisionModel,
+    sys::PSY.System,
+    ptdf;
+    line_names = nothing,
+)
     container = model.internal.container
     time_steps = PSI.get_time_steps(container)
 
@@ -909,8 +993,10 @@ function _fc_add_quadratic_loss_constraints!(model::PSI.DecisionModel, sys::PSY.
     )
 
     fc_line = PSI.get_expression(container, PTDFBranchFlowWithFC(), PSY.Line)
-    line_names = axes(fc_line, 1)
-    R_line = _resistance_by_reduced_name(sys, PSY.Line, line_names, ptdf)
+    all_line_names = axes(fc_line, 1)
+    modeled_line_names = isnothing(line_names) ? all_line_names :
+        filter(name -> name in line_names, all_line_names)
+    R_line = _resistance_by_reduced_name(sys, PSY.Line, modeled_line_names, ptdf)
 
     # Collect (fc_expr, R_dict) for each non-Line branch type with FC expressions
     other_branch_type_data = []
@@ -928,7 +1014,7 @@ function _fc_add_quadratic_loss_constraints!(model::PSI.DecisionModel, sys::PSY.
         constraint[ref_bus, t] = JuMP.@constraint(
             PSI.get_jump_model(container),
             loss_variable[ref_bus, t] ==
-            -sum(R_line[name] * fc_line[name, t]^2 for name in line_names) -
+            -sum(R_line[name] * fc_line[name, t]^2 for name in modeled_line_names) -
             sum(
                 R_dict[name] * fc[name, t]^2
                 for (fc, R_dict) in other_branch_type_data
@@ -958,6 +1044,9 @@ function build_model_with_flow_canceling_and_quadratic_losses(
     optimizer = optimizer_with_attributes(Gurobi.Optimizer),
     device_models = CAT_FC_MODELS,
     voltage_limit,
+    downfilter_quadratic_loss_lines = false,
+    downfilter_top_per_case = 30,
+    downfilter_number_to_select = 20,
 )
     ptdf = PTDF(sys)
     name_to_arc_map = _branch_arc_map(ptdf)
@@ -1008,7 +1097,20 @@ function build_model_with_flow_canceling_and_quadratic_losses(
     _fc_add_ptdf_branch_flow_with_fc_expressions!(
         model, sys, ptdf, candidate_lines, v_var, name_to_arc_map,
     )
-    _fc_add_quadratic_loss_constraints!(model, sys, ptdf)
+    selected_loss_lines = downfilter_quadratic_loss_lines ?
+        _fc_downfilter_quadratic_loss_lines(
+            sys;
+            voltage_limit,
+            optimizer,
+            top_per_case = downfilter_top_per_case,
+            number_to_select = downfilter_number_to_select,
+        ) : nothing
+    _fc_add_quadratic_loss_constraints!(
+        model,
+        sys,
+        ptdf;
+        line_names = selected_loss_lines,
+    )
 
     return model
 end

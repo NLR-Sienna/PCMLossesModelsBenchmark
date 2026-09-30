@@ -5,6 +5,8 @@
 #SBATCH --qos=high
 #SBATCH --partition=standard
 #SBATCH --licenses=gurobi@slurmdb:1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=50
 
 
 # Load required modules
@@ -13,4 +15,4 @@ module load gurobi
 
 
 # Run simulation
-julia --project=. --threads=36 jz_test_flowcancelling_losses_cats_v2.jl
+julia --project=. --threads=50 jz_test_flowcancelling_losses_cats_v2.jl

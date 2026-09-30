@@ -699,8 +699,14 @@ end
 """Variable type for total approximated line losses."""
 struct LineLossTotalApproximation <: PSI.VariableType end
 
-"""Constraint type linking bus injections to quadratic losses."""
+"""Constraint type linking bus injections to quadratic (or PWL) losses."""
 struct LineLossConstraintApproximation <: PSI.ConstraintType end
+
+"""Variable type for the per-branch linearized loss contribution (PWL loss model)."""
+struct PWLBranchLossVariable <: PSI.VariableType end
+
+"""Constraint type for a tangent-line cut lower-bounding a branch's quadratic loss curve."""
+struct PWLBranchLossTangentConstraint <: PSI.ConstraintType end
 
 """Expression type for the PTDF branch flow augmented with flow-cancelling correction terms."""
 struct PTDFBranchFlowWithFC <: PSI.ExpressionType end
@@ -786,13 +792,18 @@ function _fc_add_ptdf_branch_flow_with_fc_expressions!(
         end
 
         ptdf_line = container.expressions[key]
-        line_names = filter(axes(ptdf_line, 1)) do name
-            line = PSY.get_component(T, sys, name)
-            if line === nothing
-                return true  # keep unknown / reduced names as-is; they are not easy to map back
+        line_names = if T == PSY.MonitoredLine
+            # MonitoredLine branches (candidates) must always be kept regardless of voltage limit.
+            collect(axes(ptdf_line, 1))
+        else
+            filter(axes(ptdf_line, 1)) do name
+                line = PSY.get_component(T, sys, name)
+                if line === nothing
+                    return true  # keep unknown / reduced names as-is; they are not easy to map back
+                end
+                arc = get_arc(line)
+                max(get_base_voltage(get_from(arc)), get_base_voltage(get_to(arc))) >= quadratic_losses_voltage_limit
             end
-            arc = get_arc(line)
-            max(get_base_voltage(get_from(arc)), get_base_voltage(get_to(arc))) >= quadratic_losses_voltage_limit
         end
 
         expr_line = PSI.add_expression_container!(
@@ -911,20 +922,148 @@ function _resistance_by_reduced_name(sys, T, reduced_names, ptdf)
 end
 
 """
-    _fc_add_quadratic_loss_constraints!(model, sys, ptdf)
+    _rating_by_reduced_name(sys, T, reduced_names, ptdf) -> Dict{String, Float64}
 
-Add quadratic loss constraints using the PTDFBranchFlowWithFC expressions:
-
-    loss[ref_bus, t] == -Σ_l R_l · FC_flow[l,t]² - Σ_{non-line branches} R_b · FC_flow[b,t]²
-
-where FC_flow is the PTDFBranchFlowWithFC expression (PTDF flow + FC correction terms).
-Covers PSY.Line, PSY.MonitoredLine, and all transformer types (PhaseShiftingTransformer,
-TapTransformer, Transformer2W) for which a PTDFBranchFlowWithFC expression exists in
-the container.
-Resistances are keyed by reduced axis name (parallel-aggregated where needed).
-No voltage scaling is applied — suitable when a flat voltage profile is assumed.
+Map each *reduced* branch name of type `T` to a flow rating, used as the ± range for the
+piecewise-linear loss breakpoints. A direct branch keeps its own rating; an aggregated
+parallel group sums the constituent ratings (thermal ratings combine additively, unlike
+resistance). Falls back to `M_max` when no rating can be resolved.
 """
-function _fc_add_quadratic_loss_constraints!(model::PSI.DecisionModel, sys::PSY.System, ptdf)
+function _rating_by_reduced_name(sys, T, reduced_names, ptdf)
+    nrd = ptdf.network_reduction_data
+    agg_to_inds = Dict{String, Vector{String}}()
+    if haskey(nrd.component_to_reduction_name_map, T)
+        for (ind, agg) in nrd.component_to_reduction_name_map[T]
+            push!(get!(agg_to_inds, agg, String[]), ind)
+        end
+    end
+
+    rating = Dict{String, Float64}()
+    for name in reduced_names
+        comp = PSY.get_component(T, sys, name)
+        if comp !== nothing
+            rating[name] = get_rating(comp)
+        elseif haskey(agg_to_inds, name)
+            rating[name] = sum(get_rating(PSY.get_component(T, sys, i)) for i in agg_to_inds[name])
+        else
+            @warn "No rating found for reduced branch `$name` ($T); using M_max as fallback."
+            rating[name] = M_max
+        end
+    end
+    return rating
+end
+
+"""
+    downfilter_quadratic_loss_lines(sys; voltage_limit, optimizer,
+        top_per_case = 30, number_to_select = 20)
+
+Run one ED solve with each candidate branch disabled, rank original-line losses in each
+case, and return the selected reduced line names for quadratic loss modeling.
+"""
+function downfilter_quadratic_loss_lines(
+    sys::PSY.System;
+    voltage_limit::Real = 0.0,
+    optimizer,
+    top_per_case::Int = 30,
+    number_to_select::Int = 20,
+)
+    candidate_names = Set(
+        get_name.(get_components(x -> occursin("candidate", get_name(x)), PSY.Branch, sys))
+    )
+    isempty(candidate_names) && return nothing
+
+    line_losses_by_case = Vector{Vector{Tuple{String, Float64}}}()
+    for candidate_name in sort!(collect(candidate_names))
+        case_sys = deepcopy(sys)
+        candidates = collect(
+            get_components(x -> get_name(x) == candidate_name, PSY.Branch, case_sys),
+        )
+        isempty(candidates) && continue
+        candidate = first(candidates)
+        PSY.set_available!(candidate, false)
+
+        ed_ptdf = PTDF(case_sys)
+        template = ProblemTemplate(
+            NetworkModel(PTDFPowerModel; PTDF_matrix = ed_ptdf, use_slacks = true),
+        )
+        set_device_model!(template, PSY.Line, StaticBranch)
+        set_device_model!(template, PSY.MonitoredLine, StaticBranch)
+        set_device_model!(template, PSY.ThermalStandard, ThermalBasicDispatch)
+        set_device_model!(template, PSY.PowerLoad, StaticPowerLoad)
+        set_device_model!(template, PSY.RenewableDispatch, RenewableFullDispatch)
+        set_device_model!(template, PSY.HydroDispatch, HydroDispatchRunOfRiver)
+        set_device_model!(template, PSY.TwoTerminalGenericHVDCLine, HVDCTwoTerminalLossless)
+        branch_names = Set(get_name.(get_components(
+            x -> get_base_voltage(get_to(get_arc(x))) >= voltage_limit ||
+                get_base_voltage(get_from(get_arc(x))) >= voltage_limit,
+            PSY.Branch,
+            case_sys,
+        )))
+        set_device_model!(
+            template,
+            DeviceModel(
+                PSY.Line,
+                StaticBranch,
+                use_slacks = true,
+                attributes = Dict("filter_function" => x ->
+                    get_name(x) in branch_names && !occursin("candidate", get_name(x))),
+            ),
+        )
+
+        ed_model = DecisionModel(
+            template,
+            case_sys;
+            optimizer = optimizer,
+            name = "ED_loss_filter_$(candidate_name)",
+            store_variable_names = true,
+            optimizer_solve_log_print = false,
+        )
+        build!(ed_model; output_dir = mktempdir())
+        solve!(ed_model)
+
+        container = ed_model.internal.container
+        key = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlow, PSY.Line}("")
+        haskey(container.expressions, key) || continue
+        flow = container.expressions[key]
+        resistance = _resistance_by_reduced_name(case_sys, PSY.Line, axes(flow, 1), ed_ptdf)
+        losses = Dict(name => 0.0 for name in axes(flow, 1))
+        for name in axes(flow, 1), time in PSI.get_time_steps(container)
+            losses[name] += resistance[name] * JuMP.value(flow[name, time])^2
+        end
+        ranked = sort!([(name, loss) for (name, loss) in losses]; by = pair -> pair[2], rev = true)
+        push!(line_losses_by_case, first(ranked, min(top_per_case, length(ranked))))
+    end
+
+    counts = Dict{String, Int}()
+    total_losses = Dict{String, Float64}()
+    for ranked in line_losses_by_case, (name, loss) in ranked
+        counts[name] = get(counts, name, 0) + 1
+        total_losses[name] = get(total_losses, name, 0.0) + loss
+    end
+    selected = sort!(collect(keys(counts)); by =
+        name -> (-counts[name], -total_losses[name], name))
+    selected = Set(first(selected, min(number_to_select, length(selected))))
+    println("Quadratic-loss downfilter selected $(length(selected)) lines:")
+    println.(sort!(collect(selected)))
+    return selected
+end
+
+"""
+    _fc_add_quadratic_loss_constraints!(model, sys, ptdf; line_names = nothing, candidate_line_names = nothing)
+
+Add quadratic loss constraints using the selected PTDFBranchFlowWithFC expressions.
+`line_names`, when given, restricts the *downfiltered* names considered; `candidate_line_names`
+is always kept regardless of `line_names` so that candidate (e.g. `MonitoredLine`) branches
+always contribute to the loss approximation, since `downfilter_quadratic_loss_lines` only
+ranks existing lines and never returns candidate names.
+"""
+function _fc_add_quadratic_loss_constraints!(
+    model::PSI.DecisionModel,
+    sys::PSY.System,
+    ptdf;
+    line_names = nothing,
+    candidate_line_names = nothing,
+)
     container = model.internal.container
     time_steps = PSI.get_time_steps(container)
 
@@ -939,8 +1078,10 @@ function _fc_add_quadratic_loss_constraints!(model::PSI.DecisionModel, sys::PSY.
         time_steps,
     )
 
-    # Collect (FC expression, resistance map) for both line types and all supported
-    # transformer types that have FC expressions in the optimization container.
+    keep_name = name -> isnothing(line_names) || name in line_names ||
+        (!isnothing(candidate_line_names) && name in candidate_line_names)
+
+    # Collect (FC expression, resistance map) for original and candidate line types.
     branch_type_data = []
     for T in (
     #    PSY.Line,
@@ -954,7 +1095,8 @@ function _fc_add_quadratic_loss_constraints!(model::PSI.DecisionModel, sys::PSY.
             continue
         end
         fc = container.expressions[key]
-        R_dict = _resistance_by_reduced_name(sys, T, axes(fc, 1), ptdf)
+        names = filter(keep_name, axes(fc, 1))
+        R_dict = _resistance_by_reduced_name(sys, T, names, ptdf)
         push!(branch_type_data, (fc, R_dict))
     end
 
@@ -965,7 +1107,7 @@ function _fc_add_quadratic_loss_constraints!(model::PSI.DecisionModel, sys::PSY.
             -sum(
                 R_dict[name] * fc[name, t]^2
                 for (fc, R_dict) in branch_type_data
-                for name in axes(fc, 1);
+                for name in filter(keep_name, axes(fc, 1));
                 init = 0.0,
             )
         )
@@ -973,10 +1115,204 @@ function _fc_add_quadratic_loss_constraints!(model::PSI.DecisionModel, sys::PSY.
 end
 
 """
+    _fc_add_pwl_loss_constraints!(model, sys, ptdf; line_names, candidate_line_names, num_segments)
+
+Piecewise-linear replacement for [`_fc_add_quadratic_loss_constraints!`](@ref). Each
+branch's quadratic loss `R * flow^2` (`R > 0`, hence convex) is represented by a
+continuous, non-negative variable `loss_branch[name, t]` lower-bounded by
+`num_segments + 1` tangent-line cuts taken at evenly spaced flow breakpoints in
+`[-rating, rating]`:
+
+    loss_branch[name, t] >= R * (2*b*flow[name, t] - b^2)   for each breakpoint b
+
+Tangent lines to a convex function always lie below it, so this is a valid relaxation;
+their pointwise maximum is a piecewise-linear *lower* envelope of `R * flow^2` that tightens
+as `num_segments` grows. Because more loss is always more costly in the objective (it
+forces more generation through the copper-plate balance), the optimizer pushes
+`loss_branch` up to that envelope at the optimum, reproducing the quadratic loss value
+without any nonconvex constraint or extra binary/SOS variables — the whole model stays a
+linear MILP that plain branch-and-bound (no spatial B&B) can solve.
+"""
+function _fc_add_pwl_loss_constraints!(
+    model::PSI.DecisionModel,
+    sys::PSY.System,
+    ptdf;
+    line_names = nothing,
+    candidate_line_names = nothing,
+    num_segments::Int = 10,
+)
+    container = model.internal.container
+    jump_model = PSI.get_jump_model(container)
+    time_steps = PSI.get_time_steps(container)
+
+    loss_variable = PSI.get_variable(container, LineLossTotalApproximation(), PSY.System)
+    ref_buses = axes(loss_variable, 1)
+
+    constraint = PSI.add_constraints_container!(
+        container,
+        LineLossConstraintApproximation(),
+        PSY.System,
+        ref_buses,
+        time_steps,
+    )
+
+    keep_name = name -> isnothing(line_names) || name in line_names ||
+        (!isnothing(candidate_line_names) && name in candidate_line_names)
+
+    branch_loss_vars = []
+    for T in (
+        PSY.Line,
+        PSY.MonitoredLine,
+    #    PSY.PhaseShiftingTransformer,
+    #    PSY.TapTransformer,
+    #    PSY.Transformer2W,
+    )
+        key = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlowWithFC, T}("")
+        if !haskey(container.expressions, key)
+            continue
+        end
+        fc = container.expressions[key]
+        names = filter(keep_name, axes(fc, 1))
+        isempty(names) && continue
+        R_dict = _resistance_by_reduced_name(sys, T, names, ptdf)
+        rating_dict = _rating_by_reduced_name(sys, T, names, ptdf)
+
+        loss_var = PSI.add_variable_container!(
+            container,
+            PWLBranchLossVariable(),
+            T,
+            names,
+            time_steps,
+        )
+        tangent_con = PSI.add_constraints_container!(
+            container,
+            PWLBranchLossTangentConstraint(),
+            T,
+            names,
+            time_steps,
+            1:(num_segments + 1),
+        )
+
+        for name in names
+            R = R_dict[name]
+            breakpoints = range(-rating_dict[name], rating_dict[name]; length = num_segments + 1)
+            for t in time_steps
+                loss_var[name, t] = JuMP.@variable(
+                    jump_model,
+                    lower_bound = 0.0,
+                    base_name = "PWLBranchLoss_$(T)_{$name, $t}",
+                )
+                for (i, b) in enumerate(breakpoints)
+                    tangent_con[name, t, i] = JuMP.@constraint(
+                        jump_model,
+                        loss_var[name, t] >= R * (2 * b * fc[name, t] - b^2),
+                    )
+                end
+            end
+        end
+        push!(branch_loss_vars, loss_var)
+    end
+
+    for ref_bus in ref_buses, t in time_steps
+        constraint[ref_bus, t] = JuMP.@constraint(
+            jump_model,
+            loss_variable[ref_bus, t] ==
+            -sum(
+                loss_var[name, t]
+                for loss_var in branch_loss_vars
+                for name in axes(loss_var, 1);
+                init = 0.0,
+            )
+        )
+    end
+end
+
+"""
+    validate_pwl_vs_quadratic_losses(pwl_model, sys, ptdf;
+        line_names = nothing, candidate_line_names = nothing) -> NamedTuple
+
+Check, on an already-`solve!`d PWL flow-cancelling model (see
+[`_fc_add_pwl_loss_constraints!`](@ref)), how closely its linearized
+`PWLBranchLossVariable` tracks the true quadratic loss `R * flow^2` evaluated at the
+realized optimal flows. `line_names`/`candidate_line_names` should match the filters used
+to build `pwl_model`.
+
+Reports and returns, per branch/time-step and in aggregate:
+- `true_loss`: `R * flow^2` reconstructed from the solved `PTDFBranchFlowWithFC` flow,
+- `modeled_loss`: the solved `PWLBranchLossVariable` value,
+- `abs_gap`/`rel_gap`: `modeled_loss - true_loss` and its relative counterpart,
+- total system losses under both the true quadratic evaluation and the PWL model
+  (`LineLossTotalApproximation`).
+
+Near-zero gaps mean the tangent-cut envelope was tight at the solution found.
+"""
+function validate_pwl_vs_quadratic_losses(
+    pwl_model::PSI.DecisionModel,
+    sys::PSY.System,
+    ptdf;
+    line_names = nothing,
+    candidate_line_names = nothing,
+)
+    pwl_container = pwl_model.internal.container
+
+    total_modeled_loss = begin
+        loss_var = PSI.get_variable(pwl_container, LineLossTotalApproximation(), PSY.System)
+        -sum(JuMP.value(loss_var[rb, t]) for rb in axes(loss_var, 1), t in axes(loss_var, 2))
+    end
+
+    keep_name = name -> isnothing(line_names) || name in line_names ||
+        (!isnothing(candidate_line_names) && name in candidate_line_names)
+    time_steps = PSI.get_time_steps(pwl_container)
+
+    tightness = NamedTuple[]
+    for T in (PSY.MonitoredLine,PSY.Line)
+        key = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlowWithFC, T}("")
+        haskey(pwl_container.expressions, key) || continue
+        fc = pwl_container.expressions[key]
+        names = filter(keep_name, axes(fc, 1))
+        isempty(names) && continue
+        R_dict = _resistance_by_reduced_name(sys, T, names, ptdf)
+        loss_var = PSI.get_variable(pwl_container, PWLBranchLossVariable(), T)
+
+        for name in names, t in time_steps
+            flow_val = JuMP.value(fc[name, t])
+            true_loss = R_dict[name] * flow_val^2
+            modeled_loss = JuMP.value(loss_var[name, t])
+            abs_gap = modeled_loss - true_loss
+            rel_gap = true_loss > 1e-9 ? abs_gap / true_loss : 0.0
+            push!(
+                tightness,
+                (branch = name, t = t, flow = flow_val, true_loss = true_loss,
+                    modeled_loss = modeled_loss, abs_gap = abs_gap, rel_gap = rel_gap),
+            )
+        end
+    end
+
+    total_true_loss = sum(r.true_loss for r in tightness; init = 0.0)
+    max_abs_gap = isempty(tightness) ? 0.0 : maximum(abs(r.abs_gap) for r in tightness)
+    max_rel_gap = isempty(tightness) ? 0.0 : maximum(abs(r.rel_gap) for r in tightness)
+
+    println("=== PWL vs. true quadratic loss validation ===")
+    println("Total system losses (PWL model):        ", total_modeled_loss)
+    println("Total true quadratic loss (reconstructed): ", total_true_loss)
+    println("Max |PWL - true quadratic| branch/timestep loss gap: ", max_abs_gap)
+    println("Max relative branch/timestep loss gap:               ", max_rel_gap)
+
+    return (
+        total_modeled_loss = total_modeled_loss,
+        total_true_loss = total_true_loss,
+        branch_loss_tightness = tightness,
+        max_abs_gap = max_abs_gap,
+        max_rel_gap = max_rel_gap,
+    )
+end
+
+"""
     build_model_with_flow_canceling_and_quadratic_losses(sys) -> DecisionModel
 
 Build a PTDF investment model with flow-cancelling constraints **and** a quadratic
 PTDF-based transmission loss approximation (no voltage scaling).
+
 
 This extends `build_model_with_flow_canceling_terms` by adding:
 - A loss variable per reference bus per time step.
