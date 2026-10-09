@@ -31,7 +31,6 @@ const PNM = PowerNetworkMatrices
 include("SiennaScripts/CircularFlows/mapped_indices.jl")
 include("SiennaScripts/CircularFlows/circular_flows.jl")
 include("SiennaScripts/add_hvdc.jl")
-include("Systems/CATS/build_cats.jl")
 include("SiennaScripts/build_models.jl")
 include("SiennaScripts/build_simulations.jl")
 include("SiennaScripts/utils.jl")
@@ -41,6 +40,8 @@ include("SiennaScripts/FlowCancelling/build_models_CATS.jl")    # flow-cancellin
 include(joinpath(WORKFLOW_DIR, "utils.jl"))
 include("Systems/CATS/utils_CATS.jl")
 include("Systems/CATS/build_CATS.jl")
+# Must come after WORKFLOW_DIR utils.jl, which defines an older find_candidate_lines_for_upgrade.
+include("Systems/CATS/build_cats.jl")
 
 const PSY = PowerSystems
 const PSI = PowerSimulations
@@ -64,7 +65,7 @@ quadratic_losses_voltage_limit = 500.0
 max_b = 1 / minimum(get_x.(get_components(Line, system)))
 M = 2*pi*max_b
 
-upgraded_arcs, upgraded_arcs_buses, gens_to_duplicate = find_candidate_lines_and_gens(system, 10, 1, 230.0, reduce_radial_branches)
+upgraded_arcs, upgraded_arcs_buses, gens_to_duplicate = find_candidate_lines_and_gens(system, 500, 1, 230.0, reduce_radial_branches, false)
 
 add_candidate_lines_without_parallel!(system, upgraded_arcs,cost_data,1)
 add_candidate_generators_to_network!(
@@ -72,13 +73,13 @@ add_candidate_generators_to_network!(
            gens_to_duplicate
        )
 
-quadratic_loss_line_names = downfilter_quadratic_loss_lines(
-    system;
-    voltage_limit = quadratic_losses_voltage_limit,
-    optimizer = optimizer,
-    top_per_case = 30,
-    number_to_select = 5,
-)
+# quadratic_loss_line_names = downfilter_quadratic_loss_lines(
+#     system;
+#     voltage_limit = quadratic_losses_voltage_limit,
+#     optimizer = optimizer,
+#     top_per_case = 30,
+#     number_to_select = 5,
+# )
 
 const GUROBI_ENV = Gurobi.Env()
 optimizer = JuMP.optimizer_with_attributes(() -> Gurobi.Optimizer(GUROBI_ENV),
@@ -98,7 +99,7 @@ optimizer = JuMP.optimizer_with_attributes(() -> Gurobi.Optimizer(GUROBI_ENV),
 #     "NumericFocus" => 2,   # Big-M + quadratic terms can be numerically fragile
 #     "ImproveStartTime" => 300,  # after 5 min, switch effort to improving the incumbent
 # )   
-model = build_model_with_flow_canceling_and_PWL_quadratic_losses_CATS(system;
+build_time = @elapsed model = build_model_with_flow_canceling_and_PWL_quadratic_losses_CATS(system;
     optimizer = optimizer,
     device_models = CAT_FC_MODELS,
     voltage_limit,
@@ -107,7 +108,9 @@ model = build_model_with_flow_canceling_and_PWL_quadratic_losses_CATS(system;
 #    quadratic_loss_line_names = quadratic_loss_line_names,
     num_pwl_segments = 10,  # piecewise-linear tangent cuts per branch loss curve
 )
-solve!(model)
+println("Build time: ", round(build_time; digits = 2), " s")
+solve_time = @elapsed solve!(model)
+println("Solve time: ", round(solve_time; digits = 2), " s")
 
 res_fc_lossless = OptimizationProblemResults(model)
 #save_variables_to_csv(res_fc_lossless, joinpath(output_dir, "flow_canceling_lossless"))
@@ -122,6 +125,16 @@ println("Line investment decisions (with losses):\n", inv_lines_fc)
 losses_fc = read_variable(res_fc_lossless, PSI.VariableKey{LineLossTotalApproximation, PSY.System}(""))
 println("Flow-cancelling losses:\n", losses_fc)
 
+as_built_flow_validation = validate_as_built_candidate_flows(
+    model,
+    system,
+    inv_lines_fc;
+    optimizer = optimizer,
+    voltage_limit = voltage_limit,
+    reduce_radial_branches = reduce_radial_branches,
+    quadratic_losses_voltage_limit = quadratic_losses_voltage_limit,
+)
+
 # ptdf recomputed on the (candidate-converted) system, matching what the build function
 # constructed internally, so it can be used to reconstruct true quadratic losses.
 ybus_for_validation = reduce_radial_branches ?
@@ -134,4 +147,12 @@ validation = validate_pwl_vs_quadratic_losses(
     system,
     ptdf_for_validation;
     candidate_line_names = get_name.(get_components(x -> occursin("candidate", get_name(x)), MonitoredLine, system)),
+)
+
+print_results_summary(
+    system, 2.5, voltage_limit, quadratic_losses_voltage_limit, M,
+    500, 3, 230.0, false,
+    JuMP.objective_value(model.internal.container.JuMPmodel),
+    inv_lines_fc, build_time, solve_time;
+    losses_fc, validation,
 )

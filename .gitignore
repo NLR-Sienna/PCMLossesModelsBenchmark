@@ -132,3 +132,6 @@ hooks
 settings.*.json
 settings.json
 lbt_HSL_jll.jl-2023.11.7/CATS_PTDF/powerload_time_series.csv
+
+# Generated CATS load time series
+/CATS_PTDF/powerload_time_series.csv

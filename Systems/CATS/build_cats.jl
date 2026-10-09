@@ -208,7 +208,8 @@ function find_candidate_lines_for_upgrade(
     system::PSY.System,
     results,
     num_lines_to_extract::Int;
-    reduce_radial_branches::Bool = true
+    reduce_radial_branches::Bool = true,
+    violation_only::Bool = true
 )
 
     # get mapping from branch name to reduced network branch name (if network reduction was applied)
@@ -239,6 +240,27 @@ function find_candidate_lines_for_upgrade(
     # combine lower and upper slack variables, sort by absolute value
     all_line_violations = vcat(nonzero_line_upper_slack, nonzero_line_lower_slack)
     all_line_violations_sorted = sort(all_line_violations, :value, by=abs, rev=true)
+    candidate_names = collect(unique(all_line_violations_sorted.name))
+    non_violated_max_flow = Dict{String, Float64}()
+
+    if !violation_only
+        # ratings and flows must both be in MW for the loading ratio and the rating reduction
+        set_units_base_system!(system, "NATURAL_UNITS")
+        # fill remaining slots with non-violated lines ranked by max loading (|flow| / rating)
+        line_flow = read_expression(results, "PTDFBranchFlow__Line")
+        max_abs_flow = combine(groupby(line_flow, :name), :value => (v -> maximum(abs, v)) => :max_flow)
+        loading = Tuple{String, Float64}[]
+        for row in eachrow(max_abs_flow)
+            row.name in candidate_names && continue
+            line = find_line_from_reduced_network(map_branch_name[Line], system, row.name)
+            rating = get_rating(line)
+            rating > 0 || continue
+            push!(loading, (row.name, row.max_flow / rating))
+            non_violated_max_flow[row.name] = row.max_flow
+        end
+        sort!(loading, by = last, rev = true)
+        append!(candidate_names, first.(loading))
+    end
 
     # Get top 10 unique line names with highest violations
     #upgraded_lines = unique(all_line_violations_sorted.name)[1:num_lines_to_extract]
@@ -249,12 +271,12 @@ function find_candidate_lines_for_upgrade(
     upgraded_arcs_buses = []
     i = 0
 
-    while true
+    while i < length(candidate_names)
 
         i += 1
         println("i = ", i)
 
-        line_name = all_line_violations_sorted.name[i]
+        line_name = candidate_names[i]
 
         if ~(line_name in upgraded_lines)
 
@@ -278,11 +300,22 @@ function find_candidate_lines_for_upgrade(
                 push!(upgraded_arcs_buses, (get_number(get_from(arc)), get_number(get_to(arc))))
                 printstyled("    Number line: ", length(upgraded_lines)+1, "\n", color=:green)
 
+                # make the selected non-violated line overloaded: total rating = max flow - 50 MW (floored at 1 MW)
+                if haskey(non_violated_max_flow, line_name)
+                    parallel_lines = [get_component(PSY.ACBranch, system, k) for (k, v) in map_branch_name[Line] if v == line_name]
+                    old_total = sum(get_rating.(parallel_lines))
+                    new_total = max(round(non_violated_max_flow[line_name] - 50.0), 1.0)
+                    for l in parallel_lines
+                        set_rating!(l, get_rating(l) * new_total / old_total)
+                    end
+                    printstyled("    Rating of ", line_name, " reduced from ", old_total, " to ", new_total, " MW\n", color=:yellow)
+                end
+
             end
 
         end
 
-        if length(upgraded_lines) == num_lines_to_extract || i == length(all_line_violations_sorted.name)
+        if length(upgraded_lines) == num_lines_to_extract
             break
         end
 
@@ -422,7 +455,8 @@ function find_candidate_lines_and_gens(
         num_lines_to_extract::Int,
         num_buses_to_extract::Int,
         voltage_limit::Float64 = 0.0,
-        reduce_radial_branches::Bool = false
+        reduce_radial_branches::Bool = false,
+        violation_only::Bool = true
 )
 
     if reduce_radial_branches
@@ -479,6 +513,7 @@ function find_candidate_lines_and_gens(
     results,
     num_lines_to_extract;
     reduce_radial_branches = reduce_radial_branches,
+    violation_only = violation_only,
     );
     gens_to_duplicate =  find_candidate_generators(
         system,
@@ -725,6 +760,27 @@ function add_candidate_generators_to_network!(
 
 end
 
+function set_branch_slack_penalty!(model, slack_penalty)
+    container = model.internal.container
+    jump_model = PSI.get_jump_model(container)
+
+    for T in (Line, MonitoredLine)
+        slack_upper = container.variables[
+            PSI.VariableKey{FlowActivePowerSlackUpperBound, T}("")
+        ]
+        slack_lower = container.variables[
+            PSI.VariableKey{FlowActivePowerSlackLowerBound, T}("")
+        ]
+
+        for slack_var in slack_upper
+            JuMP.set_objective_coefficient(jump_model, slack_var, slack_penalty)
+        end
+        for slack_var in slack_lower
+            JuMP.set_objective_coefficient(jump_model, slack_var, slack_penalty)
+        end
+    end
+end
+
 function build_model_with_flow_canceling_CATS(
     system;
     optimizer = optimizer_with_attributes(Gurobi.Optimizer),
@@ -789,8 +845,8 @@ function build_model_with_flow_canceling_CATS(
     set_device_model!(template, HydroReservoir, HydroEnergyModelReservoir)
     set_device_model!(template, DeviceModel(TwoTerminalGenericHVDCLine, HVDCTwoTerminalLossless))
     set_device_model!(template, RenewableNonDispatch, FixedOutput)
-    set_device_model!(template, DeviceModel(Line, StaticBranch, use_slacks = false, attributes=Dict("filter_function" => x -> get_name(x) in branch_names_voltage_limit)))
-    set_device_model!(template, DeviceModel(MonitoredLine, StaticBranch, use_slacks = false))
+    set_device_model!(template, DeviceModel(Line, StaticBranch, use_slacks = true, attributes=Dict("filter_function" => x -> get_name(x) in branch_names_voltage_limit)))
+    set_device_model!(template, DeviceModel(MonitoredLine, StaticBranch, use_slacks = true))
 
     model = DecisionModel(
         template,
@@ -802,6 +858,10 @@ function build_model_with_flow_canceling_CATS(
         store_variable_names = true,
         calculate_conflict = true)
     build!(model; output_dir = mktempdir(; cleanup = true))
+    
+    # set slack penalty for branch flow slacks
+    slack_penalty = 1.0e5  # Choose a value in your objective/slack units
+    set_branch_slack_penalty!(model, slack_penalty)
 
     # get mapping from branch name to reduced branch name
     # accounts for parallel, reduced branches 

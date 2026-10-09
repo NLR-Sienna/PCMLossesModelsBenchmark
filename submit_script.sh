@@ -15,4 +15,4 @@ module load gurobi
 
 
 # Run simulation
-julia --project=. --threads=50 jz_test_flowcancelling_losses_cats_v2.jl
+julia --project=. --threads=50 jz_test_flowcancelling_lossless_cats.jl

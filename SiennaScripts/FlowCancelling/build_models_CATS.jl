@@ -1255,6 +1255,12 @@ function validate_pwl_vs_quadratic_losses(
 )
     pwl_container = pwl_model.internal.container
 
+    jump_model = pwl_container.JuMPmodel
+    JuMP.result_count(jump_model) > 0 || error(
+        "No solution available (termination status: ",
+        JuMP.termination_status(jump_model), "). Model was not solved or is infeasible.",
+    )
+
     total_modeled_loss = begin
         loss_var = PSI.get_variable(pwl_container, LineLossTotalApproximation(), PSY.System)
         -sum(JuMP.value(loss_var[rb, t]) for rb in axes(loss_var, 1), t in axes(loss_var, 2))
@@ -1305,6 +1311,95 @@ function validate_pwl_vs_quadratic_losses(
         max_abs_gap = max_abs_gap,
         max_rel_gap = max_rel_gap,
     )
+end
+
+function validate_as_built_candidate_flows(
+    solved_model::PSI.DecisionModel,
+    sys::PSY.System,
+    inv_lines_fc::AbstractDataFrame;
+    optimizer,
+    voltage_limit::Float64,
+    reduce_radial_branches::Bool,
+    quadratic_losses_voltage_limit::Float64 = 0.0,
+)
+    original_container = solved_model.internal.container
+    original_jump_model = PSI.get_jump_model(original_container)
+    JuMP.result_count(original_jump_model) > 0 || error(
+        "Cannot compare as-built flows: the original model has no solution (termination status: ",
+        JuMP.termination_status(original_jump_model), ").",
+    )
+
+    investment_by_name = Dict(row.name => row.value for row in eachrow(inv_lines_fc))
+    as_built_sys = deepcopy(sys)
+    candidate_lines = collect(PSY.get_components(
+        x -> occursin("candidate", PSY.get_name(x)), PSY.MonitoredLine, as_built_sys,
+    ))
+    for line in candidate_lines
+        name = PSY.get_name(line)
+        haskey(investment_by_name, name) || error("No investment decision found for candidate line `$name`.")
+        PSY.set_available!(line, investment_by_name[name] > 0.5)
+    end
+
+    as_built_model = build_model_with_flow_canceling_CATS(
+        as_built_sys;
+        optimizer = optimizer,
+        voltage_limit = voltage_limit,
+        reduce_radial_branches = reduce_radial_branches,
+        quadratic_losses_voltage_limit = quadratic_losses_voltage_limit,
+    )
+    investment_var = PSI.get_variable(
+        as_built_model.internal.container, BranchInvestmentVariable(), PSY.MonitoredLine,
+    )
+    for line in candidate_lines
+        name = PSY.get_name(line)
+        JuMP.fix(investment_var[name], investment_by_name[name] > 0.5 ? 1.0 : 0.0; force = true)
+    end
+    solve!(as_built_model)
+
+    as_built_jump_model = PSI.get_jump_model(as_built_model.internal.container)
+    JuMP.result_count(as_built_jump_model) > 0 || error(
+        "As-built flow model has no solution (termination status: ",
+        JuMP.termination_status(as_built_jump_model), ").",
+    )
+
+    flows_by_case = Dict{Symbol, DataFrame}()
+    for (case_name, container) in (
+        (:optimized, original_container),
+        (:as_built, as_built_model.internal.container),
+    )
+        rows = NamedTuple[]
+        for T in (PSY.Line, PSY.MonitoredLine, PSY.Transformer2W)
+            key = InfrastructureSystems.Optimization.ExpressionKey{PTDFBranchFlowWithFC, T}("")
+            haskey(container.expressions, key) || continue
+            flows = container.expressions[key]
+            for name in axes(flows, 1), t in axes(flows, 2)
+                push!(rows, (branch_type = string(nameof(T)), name = name, t = t, flow = JuMP.value(flows[name, t])))
+            end
+        end
+        flows_by_case[case_name] = DataFrame(rows)
+    end
+
+    optimized_flows = flows_by_case[:optimized]
+    as_built_flows = flows_by_case[:as_built]
+    comparison = innerjoin(
+        rename(optimized_flows, :flow => :optimized_flow),
+        rename(as_built_flows, :flow => :as_built_flow),
+        on = [:branch_type, :name, :t],
+    )
+    comparison.abs_difference = abs.(comparison.optimized_flow .- comparison.as_built_flow)
+    sort!(comparison, [:branch_type, :name, :t])
+
+    println("=== Optimized vs. as-built branch flow validation ===")
+    for row in eachrow(comparison)
+        println(row.branch_type, " | ", row.name, " | t=", row.t,
+            " | optimized=", row.optimized_flow,
+            " | as-built=", row.as_built_flow,
+            " | abs diff=", row.abs_difference)
+    end
+    max_abs_difference = isempty(comparison) ? 0.0 : maximum(comparison.abs_difference)
+    println("Maximum absolute branch-flow difference: ", max_abs_difference)
+
+    return (comparison = comparison, max_abs_difference = max_abs_difference, model = as_built_model)
 end
 
 """
@@ -1380,4 +1475,73 @@ function build_model_with_flow_canceling_and_quadratic_losses(
     _fc_add_quadratic_loss_constraints!(model, sys, ptdf)
 
     return model
+end
+
+"""
+    print_results_summary(sys, load_scale, voltage_limit, quadratic_losses_voltage_limit, M,
+        num_candidate_lines, num_candidate_gens, candidate_voltage_limit, violation_only,
+        objective, inv_lines_fc, build_time, solve_time;
+        losses_fc = nothing, validation = nothing, print_all_inv_lines = false)
+
+Print a run summary: inputs, results (built lines first), timings, and optional
+losses / PWL validation (skipped when `nothing`, e.g. lossless model or no validation).
+The full `inv_lines_fc` table is printed only when `print_all_inv_lines = true`.
+"""
+function print_results_summary(
+    sys::PSY.System,
+    load_scale,
+    voltage_limit,
+    quadratic_losses_voltage_limit,
+    M,
+    num_candidate_lines::Int,
+    num_candidate_gens::Int,
+    candidate_voltage_limit,
+    violation_only::Bool,
+    objective,
+    inv_lines_fc,
+    build_time,
+    solve_time;
+    losses_fc = nothing,
+    validation = nothing,
+    print_all_inv_lines::Bool = false,
+)
+    println("\n================ INPUTS ================")
+    println("System buses / lines:                   ",
+        length(PSY.get_components(PSY.ACBus, sys)), " / ",
+        length(PSY.get_components(PSY.Line, sys)))
+    println("Load scale factor:                      ", load_scale)
+    println("voltage_limit:                          ", voltage_limit)
+    println("quadratic_losses_voltage_limit:         ", quadratic_losses_voltage_limit)
+    println("M:                                      ", M)
+    println("Number of candidate lines:              ", num_candidate_lines)
+    println("Number of candidate generators:         ", num_candidate_gens)
+    println("Candidate search voltage limit:         ", candidate_voltage_limit)
+    println("violation_only:                         ", violation_only)
+
+    println("\n================ RESULTS ================")
+    built = filter(:value => v -> v > 0.5, inv_lines_fc)
+    printstyled("Built lines (inv_lines_fc = 1): ", length(unique(built.name)), "\n";
+        color = :green, bold = true)
+    for name in unique(built.name)
+        printstyled("    ", name, "\n"; color = :green, bold = true)
+    end
+    println("Objective: ", objective)
+    if print_all_inv_lines
+        show(stdout, MIME("text/plain"), inv_lines_fc; allrows = true, allcols = true)
+        println()
+    end
+    isnothing(losses_fc) || println("Flow-cancelling losses:\n", losses_fc)
+
+    println("\n================ SOLUTION TIME ================")
+    println("Build time: ", round(build_time; digits = 2), " s")
+    println("Solve time: ", round(solve_time; digits = 2), " s")
+
+    if !isnothing(validation)
+        println("\n================ VALIDATION ================")
+        println("Total modeled (PWL) loss:   ", validation.total_modeled_loss)
+        println("Total true quadratic loss:  ", validation.total_true_loss)
+        println("Max abs loss gap:           ", validation.max_abs_gap)
+        println("Max relative loss gap:      ", validation.max_rel_gap)
+    end
+    return nothing
 end
